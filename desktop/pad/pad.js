@@ -1,5 +1,6 @@
-// লিখন প্যাড — মোবাইলের লেখার প্যাড
-import { getStroke } from '../vendor/perfect-freehand.mjs';
+// লিখন প্যাড — মোবাইলে বোর্ডের একটা অংশ বড় করে দেখায়; যেখানে খুশি লেখা যায়।
+// প্যাড নিজে থেকে কখনো সরে না — শুধু দুই আঙুলে (বা "সরান" টুলে) টানলে সরে।
+import { drawEl, drawPattern, setImageLoadHandler, hit } from '../shared/draw.mjs';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -17,137 +18,96 @@ const PALETTE = [
   '#f5c400', '#82c91e', '#18a058', '#0ca678', '#1098ad', '#1c7ed6',
   '#3a56f5', '#5f3dc4', '#9c36b5', '#d6336c', '#a0522d', '#5c3d2e',
 ];
-// প্রস্থ: লাইন মোডে লাইনের উচ্চতার ভগ্নাংশ, ফ্রি মোডে বোর্ডের উচ্চতার ভগ্নাংশ
-const WIDTH = {
-  line: { pen: [0.045, 0.07, 0.105], marker: [0.28, 0.4, 0.55], eraser: [0.15, 0.3, 0.55], laser: [0.06, 0.06, 0.06] },
-  free: { pen: [0.0035, 0.006, 0.011], marker: [0.02, 0.03, 0.045], eraser: [0.025, 0.05, 0.1], laser: [0.01, 0.01, 0.01] },
-};
+// কলমের মোটা — বোর্ডের এককে (বোর্ডে ঠিক এই মাপেই আসবে)
+const WIDTH = { pen: [2, 3.5, 6], marker: [12, 20, 30], eraser: [12, 26, 54], laser: [4, 4, 4], hand: [0, 0, 0] };
+// প্যাডে স্বাভাবিক অবস্থায় বোর্ডের কত উঁচু অংশ দেখা যাবে
+const DEFAULT_VIEW_H = 320;
 
 const P = {
-  mode: localStorage.getItem('likhon.mode') || 'line',
   tool: 'pen',
-  sizeIdx: { pen: 1, marker: 1, eraser: 1, laser: 0 },
+  sizeIdx: { pen: 1, marker: 1, eraser: 1, laser: 0, hand: 0 },
   color: COLORS[0],
-  board: { page: 1, pages: 1, dark: false, bg: '#ffffff', max: 8, aspect: 16 / 9, canUndo: false, canRedo: false },
-  scrollX: 0,
-  line: [],   // এই লাইনের স্ট্রোক (লোকাল প্রদর্শন)
-  free: [],   // ফ্রি মোডের স্ট্রোক
-  redo: [],
+  st: { page: 1, pages: 1, pageId: null, bg: '#ffffff', pattern: 'grid', dark: false, view: null, canUndo: false, canRedo: false },
+  els: [],
+  docV: 0,
+  cams: new Map(), // pageId -> {x,y,z}
 };
+const imgSrc = new Map(); // element id -> src
 
-// ───────────── ক্যানভাস ও জ্যামিতি ─────────────
+// ───────────── ক্যানভাস ─────────────
 const cv = $('#pad');
 const ctx = cv.getContext('2d');
-let W = 0, H = 0, dpr = 1, raf = 0;
-const G = { top: 0, sh: 0, fx: 0, fy: 0, fw: 0, fh: 0 };
+const scv = document.createElement('canvas'); // স্থির স্তর
+const sctx = scv.getContext('2d');
+let W = 0, H = 0, dpr = 1, raf = 0, staticDirty = true;
+
+function cam() {
+  const id = P.st.pageId || '_';
+  let c = P.cams.get(id);
+  if (!c) {
+    const z = H ? H / DEFAULT_VIEW_H : 1.5;
+    const v = P.st.view;
+    c = v ? { x: v.x + v.w * 0.06, y: v.y + v.h * 0.1, z } : { x: 0, y: 0, z };
+    P.cams.set(id, c);
+  }
+  return c;
+}
+const defaultZ = () => (H ? H / DEFAULT_VIEW_H : 1.5);
+const toWorld = (sx, sy) => { const c = cam(); return [sx / c.z + c.x, sy / c.z + c.y]; };
 
 function layout() {
   const r = $('#stage').getBoundingClientRect();
   dpr = window.devicePixelRatio || 1;
   W = r.width; H = r.height;
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-  // লাইন মোড: লেখার পট্টি
-  G.sh = Math.min(H - 24, W * 0.6);
-  G.top = (H - G.sh) / 2;
-  // ফ্রি মোড: বোর্ডের অনুপাতে
-  const a = P.board.aspect || 16 / 9;
-  G.fw = Math.min(W - 16, (H - 16) * a);
-  G.fh = G.fw / a;
-  G.fx = (W - G.fw) / 2; G.fy = (H - G.fh) / 2;
+  for (const c of [cv, scv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  staticDirty = true;
   draw();
+  sendView();
+  updateZoomLabel();
 }
 new ResizeObserver(layout).observe($('#stage'));
 
-const unitsVisible = () => W / G.sh;
-
-// স্ক্রিন পিক্সেল → নরমালাইজড
-function toN(px, py) {
-  if (P.mode === 'line') return [px / G.sh + P.scrollX, (py - G.top) / G.sh];
-  return [(px - G.fx) / G.fw, (py - G.fy) / G.fh];
-}
-function toPx(s, x, y) {
-  if (s.m === 'line') return [(x - P.scrollX) * G.sh, G.top + y * G.sh];
-  return [G.fx + x * G.fw, G.fy + y * G.fh];
-}
-const scaleOf = (m) => (m === 'line' ? G.sh : G.fh);
-
-function svgPath(pts) {
-  const n = pts.length;
-  if (n < 4) return '';
-  let a = pts[0], b = pts[1];
-  const c = pts[2];
-  let d = `M${a[0]},${a[1]} Q${b[0]},${b[1]} ${(b[0] + c[0]) / 2},${(b[1] + c[1]) / 2} T`;
-  for (let i = 2; i < n - 1; i++) { a = pts[i]; b = pts[i + 1]; d += `${(a[0] + b[0]) / 2},${(a[1] + b[1]) / 2} `; }
-  return d + 'Z';
-}
-function strokePath(s, done) {
-  const pts = s.pts.map((p) => { const [x, y] = toPx(s, p[0], p[1]); return [x, y, s.tool === 'marker' ? 0.5 : p[2]]; });
-  const opt = s.tool === 'marker'
-    ? { size: s.w * scaleOf(s.m), thinning: 0, smoothing: 0.6, streamline: 0.5, simulatePressure: false, last: done }
-    : { size: s.w * scaleOf(s.m), thinning: 0.6, smoothing: 0.55, streamline: 0.4, simulatePressure: !s.pr, last: done };
-  return new Path2D(svgPath(getStroke(pts, opt)));
-}
-
+function invalidate() { staticDirty = true; requestDraw(); }
 function requestDraw() { if (!raf) raf = requestAnimationFrame(draw); }
+
+function drawStatic() {
+  const c = cam();
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sctx.fillStyle = P.st.bg || '#ffffff';
+  sctx.fillRect(0, 0, W, H);
+  drawPattern(sctx, { color: P.st.bg, pattern: P.st.pattern || 'grid' }, c, W, H);
+  sctx.setTransform(dpr * c.z, 0, 0, dpr * c.z, -c.x * c.z * dpr, -c.y * c.z * dpr);
+  for (const el of P.els) {
+    const e = el.type === 'image' && !el.src ? { ...el, src: imgSrc.get(el.id) } : el;
+    if (e.type === 'image' && !e.src) continue;
+    drawEl(sctx, e, erasing.has(el.id) ? 0.2 : 1);
+  }
+  staticDirty = false;
+}
+
 function draw() {
   raf = 0;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const dark = P.board.dark;
-  const paper = P.board.bg || '#ffffff';
-  ctx.fillStyle = dark ? '#0d111d' : '#e9ebf1';
-  ctx.fillRect(0, 0, W, H);
+  if (!W) return;
+  if (staticDirty) drawStatic();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(scv, 0, 0);
+  const c = cam();
+  ctx.setTransform(dpr * c.z, 0, 0, dpr * c.z, -c.x * c.z * dpr, -c.y * c.z * dpr);
 
-  if (P.mode === 'line') {
-    ctx.fillStyle = paper;
-    ctx.fillRect(0, 0, W, H);
-    // পট্টি
-    ctx.fillStyle = dark ? 'rgba(255,255,255,0.035)' : 'rgba(58,86,245,0.035)';
-    ctx.fillRect(0, G.top, W, G.sh);
-    const line = (y, a, dash) => {
-      ctx.save();
-      ctx.strokeStyle = dark ? `rgba(255,255,255,${a})` : `rgba(40,55,110,${a})`;
-      ctx.lineWidth = 1;
-      if (dash) ctx.setLineDash(dash);
-      ctx.beginPath(); ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); ctx.stroke();
-      ctx.restore();
-    };
-    line(G.top, 0.22);
-    line(G.top + G.sh, 0.22);
-    line(G.top + G.sh * 0.25, 0.12, [6, 6]); // মাত্রা
-    line(G.top + G.sh * 0.78, 0.2);         // বেসলাইন
-    // বোর্ডের লাইনের শেষ সীমা
-    const lim = (P.board.max - P.scrollX) * G.sh;
-    if (lim < W) {
-      ctx.fillStyle = 'rgba(255,70,85,0.08)';
-      ctx.fillRect(Math.max(0, lim), G.top, W - Math.max(0, lim), G.sh);
-      if (lim > 0) {
-        ctx.save(); ctx.strokeStyle = 'rgba(255,70,85,0.6)'; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(lim, G.top); ctx.lineTo(lim, G.top + G.sh); ctx.stroke(); ctx.restore();
-        ctx.fillStyle = 'rgba(255,70,85,0.8)'; ctx.font = `12px ${getComputedStyle(document.body).fontFamily}`;
-        ctx.fillText('লাইন শেষ', Math.min(lim + 6, W - 60), G.top + 16);
-      }
-    }
-    // কতটুকু সরানো হয়েছে তার নির্দেশক
-    if (P.scrollX > 0.01) {
-      ctx.fillStyle = dark ? 'rgba(255,255,255,0.35)' : 'rgba(40,55,110,0.35)';
-      ctx.beginPath(); ctx.moveTo(8, G.top + G.sh / 2 - 8); ctx.lineTo(2, G.top + G.sh / 2); ctx.lineTo(8, G.top + G.sh / 2 + 8); ctx.fill();
-    }
-  } else {
-    ctx.fillStyle = paper;
+  // কম্পিউটারের পর্দায় যে অংশ দেখা যাচ্ছে
+  const v = P.st.view;
+  if (v) {
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 12;
-    ctx.fillRect(G.fx, G.fy, G.fw, G.fh);
+    ctx.strokeStyle = P.st.dark ? 'rgba(255,255,255,0.35)' : 'rgba(40,55,110,0.35)';
+    ctx.lineWidth = 1.5 / c.z;
+    ctx.setLineDash([10 / c.z, 7 / c.z]);
+    ctx.strokeRect(v.x, v.y, v.w, v.h);
     ctx.restore();
   }
 
-  ctx.save();
-  if (P.mode === 'free') { ctx.beginPath(); ctx.rect(G.fx, G.fy, G.fw, G.fh); ctx.clip(); }
-  for (const s of P.mode === 'line' ? P.line : P.free) {
-    ctx.globalAlpha = s.tool === 'marker' ? 0.38 : 1;
-    ctx.fillStyle = s.c;
-    ctx.fill(strokePath(s, !s.live));
-  }
-  ctx.restore();
+  // নিজের চলমান ও সদ্য-শেষ স্ট্রোক (বোর্ড থেকে নিশ্চিত হওয়া পর্যন্ত)
+  for (const s of pending) drawEl(ctx, s.el);
+  if (cur && cur.el) drawEl(ctx, { ...cur.el }, 1);
 
   // লেজার
   const now = performance.now();
@@ -159,21 +119,24 @@ function draw() {
     alive = true;
     for (let k = 1; k < L.pts.length; k++) {
       const a = 1 - (now - L.pts[k].t) / 650;
-      ctx.strokeStyle = `rgba(255,40,60,${a})`; ctx.lineWidth = 2 + 5 * a; ctx.lineCap = 'round';
+      ctx.strokeStyle = `rgba(255,40,60,${a})`;
+      ctx.lineWidth = (2 + 5 * a) / c.z;
+      ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(L.pts[k - 1].x, L.pts[k - 1].y); ctx.lineTo(L.pts[k].x, L.pts[k].y); ctx.stroke();
     }
   }
   if (alive) requestDraw();
 
-  // ইরেজারের বৃত্ত
   if (eraserAt) {
-    ctx.strokeStyle = dark ? 'rgba(255,255,255,.7)' : 'rgba(30,40,60,.6)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = P.st.dark ? 'rgba(255,255,255,.75)' : 'rgba(30,40,60,.6)';
+    ctx.lineWidth = 1.5 / c.z;
     ctx.beginPath(); ctx.arc(eraserAt[0], eraserAt[1], eraserAt[2], 0, 7); ctx.stroke();
   }
 }
 const lasers = [];
 let eraserAt = null;
+const erasing = new Set();
+setImageLoadHandler(invalidate);
 
 // ───────────── সংযোগ ─────────────
 let ws = null, retry = 0, openedOnce = false, fatal = false, discT = 0;
@@ -193,10 +156,11 @@ function connect() {
     setStatus('on', `সংযুক্ত · ${location.hostname}`);
     $('#overlay').hidden = true;
     send({ t: 'hello', name: deviceName() });
+    sendView(true);
     try { localStorage.setItem('likhon.last', location.href); } catch {}
     app && app.onConnected && app.onConnected(location.href);
   };
-  ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch {} };
+  ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
   ws.onclose = (e) => {
     ws = null;
     if (e.code === 4001 || e.code === 4002) {
@@ -223,195 +187,254 @@ function showOverlay(title, text, showBtn) {
 }
 $('#ovBtn').onclick = () => app && app.rescan();
 
-function onMsg(m) {
-  if (m.t !== 'state') return;
-  const prevPage = P.board.page;
-  const aspectChanged = Math.abs((m.aspect || 0) - P.board.aspect) > 0.01;
-  P.board = { ...P.board, ...m };
-  if (m.page !== prevPage) { P.line = []; P.free = []; P.redo = []; P.scrollX = 0; }
-  $('#pgLabel').textContent = `${bn(P.board.page)}/${bn(P.board.pages)}`;
-  $('#pgPrev').disabled = P.board.page <= 1;
-  $('#undoBtn').disabled = !P.board.canUndo && !P.line.length;
-  $('#redoBtn').disabled = !P.board.canRedo;
-  // কালো বোর্ডে কালো কালি অদৃশ্য — স্বয়ংক্রিয়ভাবে সাদা
-  if (P.board.dark && P.color === '#1b2130') setColor('#ffffff');
-  if (!P.board.dark && P.color === '#ffffff') setColor('#1b2130');
-  if (aspectChanged) layout(); else requestDraw();
+let viewT = 0;
+function sendView(now) {
+  const go = () => {
+    viewT = 0;
+    if (!W || !P.st.pageId) return;
+    const c = cam();
+    send({ t: 'view', x: c.x, y: c.y, w: W / c.z, h: H / c.z, page: P.st.pageId });
+  };
+  if (now) { clearTimeout(viewT); go(); } else if (!viewT) viewT = setTimeout(go, 70);
 }
 
-// ───────────── আঁকা (ইনপুট) ─────────────
-let cur = null;         // বর্তমান স্ট্রোক
+let needT = 0;
+function askFull() { if (needT) return; needT = setTimeout(() => (needT = 0), 800); send({ t: 'need' }); }
+function rememberImages(els) { for (const e of els) if (e.type === 'image' && e.src) imgSrc.set(e.id, e.src); }
+
+function onMsg(m) {
+  if (m.t === 'state') {
+    const prev = P.st.pageId;
+    P.st = { ...P.st, ...m };
+    $('#pgLabel').textContent = `${bn(P.st.page)}/${bn(P.st.pages)}`;
+    $('#pgPrev').disabled = P.st.page <= 1;
+    $('#undoBtn').disabled = !P.st.canUndo;
+    $('#redoBtn').disabled = !P.st.canRedo;
+    // কালো বোর্ডে কালো কালি দেখা যায় না — নিজে থেকে সাদা
+    if (P.st.dark && P.color === '#1b2130') setColor('#ffffff');
+    if (!P.st.dark && P.color === '#ffffff') setColor('#1b2130');
+    if (m.pageId !== prev) { pending.length = 0; sendView(true); updateZoomLabel(); }
+    invalidate();
+    return;
+  }
+  if (m.t === 'doc') {
+    P.els = m.els;
+    P.docV = m.v;
+    rememberImages(m.els);
+    if (m.els.some((e) => e.type === 'image' && !e.src && !imgSrc.has(e.id))) askFull();
+    settle(m.v);
+    return;
+  }
+  if (m.t === 'add') {
+    if (m.page !== P.st.pageId || m.v !== P.docV + 1) { askFull(); return; }
+    P.els = P.els.concat(m.els);
+    P.docV = m.v;
+    rememberImages(m.els);
+    settle(m.v);
+    return;
+  }
+  if (m.t === 'goto' && m.rect) {
+    const c = cam();
+    c.x = m.rect.x + m.rect.w * 0.06;
+    c.y = m.rect.y + m.rect.h * 0.1;
+    afterMove();
+    buzz(12);
+  }
+}
+// বোর্ড থেকে নতুন লেখা এলে সাময়িক স্ট্রোকগুলো সরিয়ে দিই
+function settle(v) {
+  for (let i = pending.length - 1; i >= 0; i--) if (v > pending[i].v) pending.splice(i, 1);
+  erasing.clear();
+  invalidate();
+}
+
+// ───────────── ইনপুট ─────────────
+let cur = null;
 let seq = 0;
-let pending = [];
+let buf = [];
 let flushRaf = 0;
 let penSeen = false;
+const pending = []; // {el, v}
 const touches = new Map();
-let scrollDrag = null;
-let autoScrollT = 0;
+let gesture = null; // দুই আঙুল বা সরানো
 
 function flush() {
   flushRaf = 0;
-  if (cur && pending.length) send({ t: 'pts', s: cur.s, d: pending });
-  pending = [];
+  if (cur && buf.length) send({ t: 'pts', s: cur.s, d: buf });
+  buf = [];
 }
-const r4 = (v) => Math.round(v * 10000) / 10000;
+const r1 = (v) => Math.round(v * 10) / 10;
+const r2 = (v) => Math.round(v * 100) / 100;
+
+function localPt(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+
+function startGesture() {
+  const pts = [...touches.values()];
+  const c = cam();
+  if (pts.length >= 2) {
+    const [a, b] = pts;
+    gesture = { mode: 'pinch', d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2, c0: { ...c } };
+  } else if (pts.length === 1) {
+    gesture = { mode: 'pan', sx: pts[0][0], sy: pts[0][1], c0: { ...c } };
+  }
+}
+function updateGesture() {
+  const pts = [...touches.values()];
+  const c = cam();
+  if (!gesture) return;
+  if (gesture.mode === 'pinch' && pts.length >= 2) {
+    const [a, b] = pts;
+    const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    const g = gesture;
+    const z = clamp(g.c0.z * (d / g.d), defaultZ() * 0.15, defaultZ() * 4);
+    const wx = g.mx / g.c0.z + g.c0.x, wy = g.my / g.c0.z + g.c0.y;
+    c.z = z; c.x = wx - mx / z; c.y = wy - my / z;
+  } else if (gesture.mode === 'pan' && pts.length === 1) {
+    c.x = gesture.c0.x - (pts[0][0] - gesture.sx) / c.z;
+    c.y = gesture.c0.y - (pts[0][1] - gesture.sy) / c.z;
+  }
+  afterMove();
+}
+function afterMove() { invalidate(); sendView(); updateZoomLabel(); }
 
 cv.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (e.pointerType === 'pen') penSeen = true;
-  if (e.pointerType === 'touch') {
-    touches.set(e.pointerId, e.clientX);
-    // দুই আঙুল: লেখা বাতিল করে স্ক্রল
-    if (touches.size >= 2 || (penSeen && P.mode === 'line')) {
-      if (cur && cur.pid !== undefined && touches.size >= 2) cancelStroke();
-      if (P.mode === 'line') scrollDrag = { x: e.clientX, sx: P.scrollX };
-      return;
-    }
-    if (penSeen) return; // স্টাইলাস থাকলে হাতের তালু উপেক্ষা
+  const pt = localPt(e);
+  $('#hint').classList.add('gone');
+
+  if (e.pointerType === 'touch' || P.tool === 'hand') {
+    touches.set(e.pointerId, pt);
+    cv.setPointerCapture(e.pointerId);
+    // দুই আঙুল = সরানো/জুম; স্টাইলাস থাকলে এক আঙুলেও সরানো; "সরান" টুলেও সরানো
+    if (touches.size >= 2) { cancelStroke(); startGesture(); return; }
+    if (P.tool === 'hand' || (penSeen && e.pointerType === 'touch')) { startGesture(); return; }
+    if (cur) return;
   }
   if (cur) return;
   cv.setPointerCapture(e.pointerId);
-  clearTimeout(autoScrollT);
-  $('#hint').classList.add('gone');
-  const r = cv.getBoundingClientRect();
-  const px = e.clientX - r.left, py = e.clientY - r.top;
-  const [x, y] = toN(px, py);
+  const [x, y] = toWorld(pt[0], pt[1]);
   const pr = e.pointerType === 'pen' && e.pressure > 0;
   const p = pr ? e.pressure : 0.5;
-  const w = WIDTH[P.mode][P.tool][P.sizeIdx[P.tool]];
-  cur = { s: ++seq, pid: e.pointerId, tool: P.tool, c: P.color, w, m: P.mode, pr, pts: [[x, y, p]], live: true };
+  const w = WIDTH[P.tool][P.sizeIdx[P.tool]];
+  cur = { s: ++seq, pid: e.pointerId, tool: P.tool, sent: false };
   if (P.tool === 'pen' || P.tool === 'marker') {
-    (P.mode === 'line' ? P.line : P.free).push(cur);
-    P.redo = [];
+    cur.el = { type: 'stroke', tool: P.tool, color: P.color, size: w, pr, pts: [[x, y, p]] };
   } else if (P.tool === 'laser') {
-    cur.L = { pts: [{ x: px, y: py, t: performance.now() }], done: false };
+    cur.L = { pts: [{ x, y, t: performance.now() }], done: false };
     lasers.push(cur.L);
   } else if (P.tool === 'eraser') {
-    eraseLocal(x, y, w / 2);
-    eraserAt = [px, py, (w * scaleOf(P.mode)) / 2];
+    cur.r = w / 2;
+    eraseLocal(x, y, cur.r);
+    eraserAt = [x, y, cur.r];
   }
-  send({ t: 'down', s: cur.s, tool: P.tool, c: P.color, w, m: P.mode, x: r4(x), y: r4(y), p: r4(p), pr });
+  // প্রথম বিন্দু একটু পরে পাঠাই, যাতে দুই আঙুলের সরানো শুরু হলে ভুল দাগ না পড়ে
+  cur.first = { t: 'down', s: cur.s, tool: P.tool, c: P.color, w, x: r1(x), y: r1(y), p: r2(p), pr };
+  cur.timer = setTimeout(sendFirst, e.pointerType === 'touch' ? 45 : 0);
   requestDraw();
 });
+function sendFirst() {
+  if (!cur || cur.sent) return;
+  cur.sent = true;
+  clearTimeout(cur.timer);
+  send(cur.first);
+}
 
 cv.addEventListener('pointermove', (e) => {
-  if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
-    touches.set(e.pointerId, e.clientX);
-    if (scrollDrag) {
-      const xs = [...touches.values()];
-      const avg = xs.reduce((a, b) => a + b, 0) / xs.length;
-      if (scrollDrag.avg === undefined) scrollDrag.avg = avg;
-      P.scrollX = Math.max(0, scrollDrag.sx - (avg - scrollDrag.avg) / G.sh);
-      requestDraw();
-      return;
-    }
+  if (touches.has(e.pointerId)) {
+    touches.set(e.pointerId, localPt(e));
+    if (gesture) { updateGesture(); return; }
   }
   if (!cur || e.pointerId !== cur.pid) return;
   const r = cv.getBoundingClientRect();
   const evs = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
   for (const ev of evs.length ? evs : [e]) {
-    const px = ev.clientX - r.left, py = ev.clientY - r.top;
-    const [x, y] = toN(px, py);
-    const p = cur.pr ? ev.pressure || 0.5 : 0.5;
-    if (cur.tool === 'pen' || cur.tool === 'marker') cur.pts.push([x, y, p]);
-    else if (cur.tool === 'laser') cur.L.pts.push({ x: px, y: py, t: performance.now() });
-    else if (cur.tool === 'eraser') { eraseLocal(x, y, cur.w / 2); eraserAt = [px, py, eraserAt[2]]; }
-    pending.push(r4(x), r4(y), r4(p));
+    const [x, y] = toWorld(ev.clientX - r.left, ev.clientY - r.top);
+    const p = cur.el && cur.el.pr ? ev.pressure || 0.5 : 0.5;
+    if (cur.el) cur.el.pts.push([x, y, p]);
+    else if (cur.L) cur.L.pts.push({ x, y, t: performance.now() });
+    else if (cur.tool === 'eraser') { eraseLocal(x, y, cur.r); eraserAt = [x, y, cur.r]; }
+    buf.push(r1(x), r1(y), r2(p));
   }
-  if (!flushRaf) flushRaf = requestAnimationFrame(flush);
+  if (cur.sent && !flushRaf) flushRaf = requestAnimationFrame(flush);
+  else if (!cur.sent && buf.length > 6) { sendFirst(); flush(); }
   requestDraw();
 });
 
-function endStroke(e) {
-  if (e.pointerType === 'touch') {
+function endPointer(e) {
+  if (touches.has(e.pointerId)) {
     touches.delete(e.pointerId);
-    if (scrollDrag) {
-      if (!touches.size) scrollDrag = null;
-      else { scrollDrag.avg = undefined; scrollDrag.sx = P.scrollX; }
+    if (gesture) {
+      if (touches.size) startGesture(); else gesture = null;
       return;
     }
   }
   if (!cur || e.pointerId !== cur.pid) return;
+  sendFirst();
   flush();
   send({ t: 'up', s: cur.s });
-  cur.live = false;
+  if (cur.el) pending.push({ el: cur.el, v: P.docV });
   if (cur.L) cur.L.done = true;
-  const was = cur;
   cur = null;
   eraserAt = null;
-  if (was.m === 'line' && (was.tool === 'pen' || was.tool === 'marker')) scheduleAutoScroll();
-  updateUndo();
   requestDraw();
 }
-cv.addEventListener('pointerup', endStroke);
-cv.addEventListener('pointercancel', endStroke);
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
 
 function cancelStroke() {
   if (!cur) return;
-  flush();
-  send({ t: 'cancel', s: cur.s });
-  const list = cur.m === 'line' ? P.line : P.free;
-  const i = list.indexOf(cur);
-  if (i >= 0) list.splice(i, 1);
+  clearTimeout(cur.timer);
+  if (cur.sent) { flush(); send({ t: 'cancel', s: cur.s }); }
+  buf = [];
+  if (cur.L) cur.L.done = true;
   cur = null;
   eraserAt = null;
+  if (erasing.size) { erasing.clear(); invalidate(); }
   requestDraw();
 }
 
 function eraseLocal(x, y, r) {
-  // লাইন মোডে দুই অক্ষই পট্টির উচ্চতার এককে; ফ্রি মোডে x-কে বোর্ডের উচ্চতার এককে আনি
-  const kx = P.mode === 'line' ? 1 : G.fw / G.fh;
-  const list = P.mode === 'line' ? P.line : P.free;
-  for (let i = list.length - 1; i >= 0; i--) {
-    const s = list[i];
-    if (s.pts.some((p) => Math.hypot((p[0] - x) * kx, p[1] - y) <= r + s.w / 2)) list.splice(i, 1);
+  let added = false;
+  for (const el of P.els) {
+    if (erasing.has(el.id)) continue;
+    if (hit(el, x, y, r)) { erasing.add(el.id); added = true; }
   }
+  if (added) invalidate();
 }
 
-// লেখা ডানে পৌঁছালে পট্টি নিজে সরে যায়
-function lineMaxX() { return P.line.reduce((m, s) => Math.max(m, ...s.pts.map((p) => p[0])), 0); }
-function scheduleAutoScroll() {
-  clearTimeout(autoScrollT);
-  autoScrollT = setTimeout(() => {
-    const max = lineMaxX();
-    const vis = unitsVisible();
-    if (max - P.scrollX > vis * 0.68) animateScroll(max - vis * 0.3);
-  }, 420);
+// ───────────── জুম ─────────────
+function zoomBy(f) {
+  const c = cam();
+  const wx = W / 2 / c.z + c.x, wy = H / 2 / c.z + c.y;
+  c.z = clamp(c.z * f, defaultZ() * 0.15, defaultZ() * 4);
+  c.x = wx - W / 2 / c.z; c.y = wy - H / 2 / c.z;
+  afterMove();
+  buzz();
 }
-function animateScroll(target) {
-  const from = P.scrollX, t0 = performance.now(), dur = 260;
-  target = Math.max(0, target);
-  const step = (now) => {
-    const k = Math.min(1, (now - t0) / dur);
-    P.scrollX = from + (target - from) * (1 - Math.pow(1 - k, 3));
-    draw();
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
+function updateZoomLabel() { if (H) $('#zoomLabel').textContent = bn(Math.round((cam().z / defaultZ()) * 100)) + '%'; }
+$('#zoomIn').onclick = () => zoomBy(1.25);
+$('#zoomOut').onclick = () => zoomBy(1 / 1.25);
+$('#zoomLabel').onclick = () => { const c = cam(); zoomBy(defaultZ() / c.z); };
+// কম্পিউটারের পর্দায় যা দেখা যাচ্ছে পুরোটা মোবাইলে
+$('#fitBtn').onclick = () => {
+  const v = P.st.view;
+  if (!v) return;
+  const c = cam();
+  c.z = clamp(Math.min(W / v.w, H / v.h), defaultZ() * 0.15, defaultZ() * 4);
+  c.x = v.x + v.w / 2 - W / 2 / c.z;
+  c.y = v.y + v.h / 2 - H / 2 / c.z;
+  afterMove();
+  buzz();
+};
 
 // ───────────── নিয়ন্ত্রণ ─────────────
-function setMode(m) {
-  if (cur) return;
-  P.mode = m;
-  try { localStorage.setItem('likhon.mode', m); } catch {}
-  $$('#modeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.m === m));
-  $('#lineActions').style.display = m === 'line' ? '' : 'none';
-  $('[data-tool="laser"]').disabled = m === 'line';
-  if (m === 'line' && P.tool === 'laser') setTool('pen');
-  $('#hint').textContent = m === 'line' ? 'এই পট্টিতে লিখুন — বোর্ডে নির্দিষ্ট সাইজে বসবে' : 'পুরো বোর্ড এখানে — যেখানে খুশি লিখুন বা আঁকুন';
-  $('#hint').classList.remove('gone');
-  setTimeout(() => $('#hint').classList.add('gone'), 3500);
-  buzz();
-  requestDraw();
-}
-$$('#modeSeg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
-
 function setTool(t) {
   P.tool = t;
   $$('.tb[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
   $$('#sizes button').forEach((b) => b.classList.toggle('active', Number(b.dataset.i) === P.sizeIdx[t]));
-  $('#sizes').style.visibility = t === 'laser' ? 'hidden' : '';
+  $('#sizes').style.visibility = t === 'laser' || t === 'hand' ? 'hidden' : '';
   buzz();
 }
 $$('.tb[data-tool]').forEach((b) => (b.onclick = () => setTool(b.dataset.tool)));
@@ -437,7 +460,7 @@ function buildColors() {
 }
 function setColor(c) {
   P.color = c;
-  if (P.tool === 'eraser' || P.tool === 'laser') setTool('pen');
+  if (['eraser', 'laser', 'hand'].includes(P.tool)) setTool('pen');
   $$('.sw').forEach((b) => b.classList.toggle('active', b.dataset.c === c));
   $('#moreColors').classList.toggle('active', !COLORS.includes(c));
   $('#moreColors').style.background = COLORS.includes(c) ? '' : c;
@@ -446,33 +469,8 @@ function setColor(c) {
 $('#moreColors').onclick = () => ($('#colorSheet').hidden = false);
 $$('.sheet').forEach((s) => s.addEventListener('click', (e) => { if (e.target === s) s.hidden = true; }));
 
-function updateUndo() {
-  const list = P.mode === 'line' ? P.line : P.free;
-  $('#undoBtn').disabled = !P.board.canUndo && !list.length;
-}
-$('#undoBtn').onclick = () => {
-  send({ t: 'undo' });
-  const list = P.mode === 'line' ? P.line : P.free;
-  if (list.length) P.redo.push({ m: P.mode, s: list.pop() });
-  buzz(); requestDraw();
-};
-$('#redoBtn').onclick = () => {
-  send({ t: 'redo' });
-  const r = P.redo.pop();
-  if (r) (r.m === 'line' ? P.line : P.free).push(r.s);
-  buzz(); requestDraw();
-};
-$('#nlBtn').onclick = () => {
-  send({ t: 'nl' });
-  P.line = []; P.redo = [];
-  P.scrollX = 0;
-  buzz(14); requestDraw();
-};
-$('#spaceBtn').onclick = () => {
-  const max = lineMaxX();
-  animateScroll(max > 0 ? max + 0.35 - unitsVisible() * 0.12 : P.scrollX + unitsVisible() * 0.5);
-  buzz();
-};
+$('#undoBtn').onclick = () => { send({ t: 'undo' }); buzz(); };
+$('#redoBtn').onclick = () => { send({ t: 'redo' }); buzz(); };
 $('#pgPrev').onclick = () => { send({ t: 'page', a: 'prev' }); buzz(); };
 $('#pgNext').onclick = () => { send({ t: 'page', a: 'next' }); buzz(); };
 $('#moreBtn').onclick = () => ($('#moreSheet').hidden = false);
@@ -480,8 +478,7 @@ $('#newPageBtn').onclick = () => { send({ t: 'page', a: 'new' }); $('#moreSheet'
 $('#clearBtn').onclick = () => {
   if (!confirm('বোর্ডের এই পেজের সব লেখা মুছে যাবে। নিশ্চিত?')) return;
   send({ t: 'clear' });
-  P.line = []; P.free = []; P.redo = []; P.scrollX = 0;
-  $('#moreSheet').hidden = true; requestDraw();
+  $('#moreSheet').hidden = true;
 };
 $('#reconnectBtn').onclick = () => { fatal = false; $('#moreSheet').hidden = true; if (ws) ws.close(); else connect(); };
 if (app) {
@@ -497,9 +494,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 buildColors();
 setColor(COLORS[0]);
 setTool('pen');
-setMode(P.mode);
+setTimeout(() => $('#hint').classList.add('gone'), 5000);
 layout();
 keepAwake();
 connect();
 booted = true;
-window.__pad = { P };
+window.__pad = { P, cam };

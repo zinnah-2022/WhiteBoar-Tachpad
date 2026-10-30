@@ -75,8 +75,11 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 
 .color-row { justify-content: space-between; }
 .action-row { gap: 8px; }
-.action-row .line-actions { flex: 1; justify-content: flex-end; }
 .action-row .act { flex: 1; justify-content: center; }
+.zoomg { display: flex; align-items: center; background: var(--bg-2); border-radius: 14px; height: 46px; padding: 0 2px; flex: none; }
+.zoomg .ib { width: 38px; height: 42px; }
+.zl { min-width: 50px; height: 42px; font-size: 13px; font-weight: 600; border-radius: 10px; }
+.zl:active { background: var(--bg-3); }
 .colors { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; flex: 1; min-width: 0; }
 .colors::-webkit-scrollbar { display: none; }
 .sw { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(255,255,255,.14); transition: transform .12s; }
@@ -138,7 +141,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   .colors { flex-wrap: wrap; overflow: visible; }
   .sw { width: 28px; height: 28px; }
   .more-colors { width: 28px; height: 28px; }
-  .action-row .ib.big { flex: 1; }
-  .line-actions { width: 100%; flex-direction: column; flex: none !important; }
-  .act { justify-content: center; height: 44px; }
+  .action-row .ib.big { flex: 1; height: 42px; }
+  .zoomg { width: 100%; justify-content: space-between; }
+  .act { justify-content: center; height: 44px; width: 100%; flex: none; }
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#151a2c">
+<meta name="theme-color" content="#121729">
 <meta name="mobile-web-app-capable" content="yes">
 <title>লিখন প্যাড</title>
 <link rel="icon" href="icon.png">
@@ -16,10 +16,6 @@
       <span class="dot" id="dot"></span>
       <span id="statusText">সংযোগ হচ্ছে…</span>
     </div>
-    <div class="seg" id="modeSeg">
-      <button data-m="line" class="active">লাইন</button>
-      <button data-m="free">ফ্রি</button>
-    </div>
     <div class="pager">
       <button class="ib" id="pgPrev" aria-label="আগের পেজ"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
       <span id="pgLabel">১/১</span>
@@ -30,7 +26,7 @@
 
   <main class="stage" id="stage">
     <canvas id="pad"></canvas>
-    <div class="hint" id="hint">এখানে লিখুন — বোর্ডে সাথে সাথে দেখা যাবে</div>
+    <div class="hint" id="hint">যেখানে খুশি লিখুন · দুই আঙুলে সরান ও ছোট-বড় করুন</div>
   </main>
 
   <section class="controls">
@@ -38,7 +34,7 @@
       <button class="tb active" data-tool="pen" aria-label="কলম">
         <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>কলম</span>
       </button>
-      <button class="tb" data-tool="marker" aria-label="হাইলাইটার">
+      <button class="tb" data-tool="marker" aria-label="মার্কার">
         <svg viewBox="0 0 24 24"><path d="M9 11l-6 6v3h9l3-3"/><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg><span>মার্কার</span>
       </button>
       <button class="tb" data-tool="eraser" aria-label="ইরেজার">
@@ -46,6 +42,9 @@
       </button>
       <button class="tb" data-tool="laser" aria-label="লেজার">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>লেজার</span>
+      </button>
+      <button class="tb" data-tool="hand" aria-label="সরান">
+        <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg><span>সরান</span>
       </button>
       <div class="sizes" id="sizes">
         <button data-i="0" aria-label="চিকন"><i></i></button>
@@ -60,10 +59,12 @@
     <div class="row action-row">
       <button class="ib big" id="undoBtn" aria-label="আগের অবস্থা"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
       <button class="ib big" id="redoBtn" aria-label="আবার"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
-      <div class="line-actions" id="lineActions">
-        <button class="act" id="spaceBtn">পরের শব্দ<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-        <button class="act primary" id="nlBtn"><svg viewBox="0 0 24 24"><path d="M20 4v7a4 4 0 0 1-4 4H4"/><path d="M9 10l-5 5 5 5"/></svg>নতুন লাইন</button>
+      <div class="zoomg">
+        <button class="ib" id="zoomOut" aria-label="ছোট করে দেখুন"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+        <button class="zl" id="zoomLabel" aria-label="স্বাভাবিক">১০০%</button>
+        <button class="ib" id="zoomIn" aria-label="বড় করে দেখুন"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
+      <button class="act" id="fitBtn" aria-label="কম্পিউটারের পর্দার অংশ"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>পুরো পর্দা</span></button>
     </div>
   </section>
 </div>
@@ -82,7 +83,7 @@
     <button class="menu-item danger" id="clearBtn">এই পেজ পরিষ্কার করুন</button>
     <button class="menu-item" id="reconnectBtn">আবার সংযোগ করুন</button>
     <button class="menu-item" id="scanBtn" hidden>অন্য কম্পিউটারে যুক্ত হন (QR)</button>
-    <p class="about">লিখন প্যাড · মোবাইলে লিখুন, বোর্ডে দেখুন</p>
+    <p class="about">লিখন প্যাড · দুই আঙুলে টেনে সরান, চিমটি দিয়ে ছোট-বড় করুন</p>
   </div>
 </div>
 

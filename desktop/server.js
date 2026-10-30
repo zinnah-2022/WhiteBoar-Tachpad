@@ -24,6 +24,7 @@ const MIME = {
 const ROUTES = [
   ['/pad/', 'pad'],
   ['/vendor/', 'vendor'],
+  ['/shared/', 'shared'],
   ['/board/', 'renderer'],
 ];
 

@@ -99,21 +99,10 @@
   <div class="kv"><span>পিন</span><code id="pinText" class="pin">—</code><button class="tbtn" id="pinNew">নতুন পিন</button></div>
   <div class="devices" id="devices"></div>
 
-  <h3>প্যাডের লেখার সাইজ</h3>
-  <div class="seg" id="lineSize">
-    <button data-v="28">ছোট</button>
-    <button data-v="40">মাঝারি</button>
-    <button data-v="56">বড়</button>
-    <button data-v="80">অনেক বড়</button>
-  </div>
-  <p class="muted small">মোবাইলে যত বড় করেই লিখুন, বোর্ডে এই সাইজেই বসবে।</p>
-  <h3>লাইনের ফাঁক</h3>
-  <div class="seg" id="lineGap">
-    <button data-v="1.3">কম</button>
-    <button data-v="1.6">স্বাভাবিক</button>
-    <button data-v="2">বেশি</button>
-  </div>
-  <button class="tbtn wide" id="cursorHere">লেখা শুরুর জায়গা বাছুন (বোর্ডে ক্লিক করুন)</button>
+  <h3>মোবাইলের জায়গা</h3>
+  <label class="check"><input type="checkbox" id="showPadView" checked> মোবাইলে যে অংশ দেখা যাচ্ছে, বোর্ডে নীল ফ্রেমে দেখান</label>
+  <button class="tbtn wide" id="sendView">মোবাইলে বোর্ডের এই অংশ দেখান</button>
+  <p class="muted small">মোবাইলে দুই আঙুলে টেনে বোর্ড সরান, চিমটি দিয়ে ছোট-বড় করুন। মোবাইলে যত বড় করে দেখবেন, বোর্ডে লেখা তত ছোট হবে।</p>
   <p class="muted small">ফায়ারওয়াল জানতে চাইলে <b>Allow access</b> চাপুন, না হলে মোবাইল সংযোগ পাবে না।</p>
 </aside>
 
@@ -134,7 +123,6 @@
   <button class="tool" data-tool="text" title="টেক্সট (T)"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
   <span class="tsep"></span>
   <button class="tool" data-tool="laser" title="লেজার পয়েন্টার (K)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button>
-  <button class="tool" data-tool="cursor" title="মোবাইলের লেখা শুরুর জায়গা (C)"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></button>
   <button class="tool" id="imgBtn" title="ছবি যোগ (I)"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg></button>
   <span class="tsep"></span>
   <button class="tool" id="undoBtn" title="আগের অবস্থা (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
@@ -173,7 +161,7 @@
       <span>M</span><span>হাইলাইটার</span><span>E</span><span>ইরেজার</span>
       <span>L / A</span><span>রেখা / তীর</span><span>R / O / G</span><span>আয়ত / বৃত্ত / ত্রিভুজ</span>
       <span>T</span><span>টেক্সট</span><span>K</span><span>লেজার</span>
-      <span>C</span><span>মোবাইল কার্সর</span><span>Space + টানুন</span><span>বোর্ড সরানো</span>
+      <span>I</span><span>ছবি যোগ</span><span>Space + টানুন</span><span>বোর্ড সরানো</span>
       <span>Ctrl + চাকা</span><span>জুম</span><span>Shift + 1</span><span>সব দেখান</span>
       <span>Ctrl+Z / Y</span><span>আগের / আবার</span><span>Delete</span><span>নির্বাচিত মুছুন</span>
       <span>Ctrl+D</span><span>ডুপ্লিকেট</span><span>PageUp/Down</span><span>পেজ বদল</span>

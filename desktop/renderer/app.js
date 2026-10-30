@@ -1,5 +1,7 @@
 // লিখন বোর্ড — হোয়াইটবোর্ড ইঞ্জিন ও ইন্টারফেস
-import { getStroke } from '../vendor/perfect-freehand.mjs';
+import {
+  FONT, isDark, imgCache, setImageLoadHandler, strokePath, measureText, bbox, hit, translate, contentBounds, drawEl, drawPattern,
+} from '../shared/draw.mjs';
 import qrcode from '../vendor/qrcode.mjs';
 
 // ───────────────────────── সাধারণ সহায়ক ─────────────────────────
@@ -8,7 +10,6 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const bn = (n) => String(n).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[d]);
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const FONT = "'Nirmala UI','Hind Siliguri','Noto Sans Bengali','Segoe UI',sans-serif";
 const params = new URLSearchParams(location.search);
 
 const PEN_COLORS = ['#1b2130', '#e0393e', '#f08c00', '#f5c400', '#18a058', '#1c7ed6', '#3a56f5', '#9c36b5', '#ffffff'];
@@ -30,11 +31,6 @@ const SIZE_PRESETS = {
 const DRAW_TOOLS = ['pen', 'marker'];
 const SHAPE_TOOLS = ['line', 'arrow', 'rect', 'ellipse', 'triangle'];
 
-function isDark(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  return 0.299 * r + 0.587 * g + 0.114 * b < 128;
-}
 
 // ইলেকট্রন না থাকলে (ব্রাউজারে পরীক্ষা) সাধারণ বিকল্প
 const native = window.likhonNative || {
@@ -68,7 +64,6 @@ function newPage(bg) {
     undo: [],
     redo: [],
     cam: { x: 0, y: 0, z: 1 },
-    cursor: { x: 90, y: 110, lx: 90, right: null },
   };
 }
 
@@ -82,8 +77,7 @@ const S = {
   pages: [newPage()],
   pi: 0,
   sel: new Set(),
-  lineSize: 40,
-  lineGap: 1.6,
+  showPadView: true,
   filePath: null,
   fileName: 'নতুন বোর্ড',
   saved: true,
@@ -114,214 +108,6 @@ function requestRender() { if (!rafId) rafId = requestAnimationFrame(render); }
 
 const toWorld = (sx, sy) => { const c = cam(); return [sx / c.z + c.x, sy / c.z + c.y]; };
 const toScreen = (wx, wy) => { const c = cam(); return [(wx - c.x) * c.z, (wy - c.y) * c.z]; };
-
-// ───────────────────────── উপাদানের জ্যামিতি ─────────────────────────
-const pathCache = new WeakMap();
-const boxCache = new WeakMap();
-const imgCache = new Map();
-
-function svgPath(pts) {
-  const n = pts.length;
-  if (n < 4) return '';
-  let a = pts[0], b = pts[1];
-  const c = pts[2];
-  let d = `M${a[0].toFixed(2)},${a[1].toFixed(2)} Q${b[0].toFixed(2)},${b[1].toFixed(2)} ${((b[0] + c[0]) / 2).toFixed(2)},${((b[1] + c[1]) / 2).toFixed(2)} T`;
-  for (let i = 2; i < n - 1; i++) {
-    a = pts[i]; b = pts[i + 1];
-    d += `${((a[0] + b[0]) / 2).toFixed(2)},${((a[1] + b[1]) / 2).toFixed(2)} `;
-  }
-  return d + 'Z';
-}
-
-function strokeOptions(el, last) {
-  if (el.tool === 'marker') {
-    return { size: el.size, thinning: 0, smoothing: 0.6, streamline: 0.5, simulatePressure: false, last, start: { cap: true }, end: { cap: true } };
-  }
-  return { size: el.size, thinning: 0.6, smoothing: 0.55, streamline: 0.4, simulatePressure: !el.pr, last, start: { cap: true, taper: 0 }, end: { cap: true, taper: 0 } };
-}
-
-function strokePath(el, last = true) {
-  if (last) { const p = pathCache.get(el); if (p) return p; }
-  const pts = el.tool === 'marker' ? el.pts.map((q) => [q[0], q[1], 0.5]) : el.pts;
-  const outline = getStroke(pts, strokeOptions(el, last));
-  const p = new Path2D(svgPath(outline));
-  if (last) pathCache.set(el, p);
-  return p;
-}
-
-function textLines(el) { return String(el.text).split('\n'); }
-function measureText(el) {
-  sctx.save();
-  sctx.font = `${el.size}px ${FONT}`;
-  const w = Math.max(...textLines(el).map((l) => sctx.measureText(l || ' ').width));
-  sctx.restore();
-  return { w, h: textLines(el).length * el.size * 1.25 };
-}
-
-function bbox(el) {
-  let b = boxCache.get(el);
-  if (b) return b;
-  if (el.type === 'stroke') {
-    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-    for (const p of el.pts) { if (p[0] < x1) x1 = p[0]; if (p[1] < y1) y1 = p[1]; if (p[0] > x2) x2 = p[0]; if (p[1] > y2) y2 = p[1]; }
-    const r = el.size;
-    b = { x1: x1 - r, y1: y1 - r, x2: x2 + r, y2: y2 + r };
-  } else if (el.type === 'text') {
-    const m = measureText(el);
-    b = { x1: el.x, y1: el.y, x2: el.x + m.w, y2: el.y + m.h };
-  } else if (el.type === 'image') {
-    b = { x1: el.x, y1: el.y, x2: el.x + el.w, y2: el.y + el.h };
-  } else {
-    const r = el.size * 2 + (el.type === 'arrow' ? el.size * 4 + 12 : 0);
-    b = { x1: Math.min(el.x1, el.x2) - r, y1: Math.min(el.y1, el.y2) - r, x2: Math.max(el.x1, el.x2) + r, y2: Math.max(el.y1, el.y2) + r };
-  }
-  boxCache.set(el, b);
-  return b;
-}
-
-function segDist(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay;
-  const l = dx * dx + dy * dy;
-  let t = l ? ((px - ax) * dx + (py - ay) * dy) / l : 0;
-  t = clamp(t, 0, 1);
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
-
-function shapeOutline(el) {
-  const x1 = Math.min(el.x1, el.x2), x2 = Math.max(el.x1, el.x2), y1 = Math.min(el.y1, el.y2), y2 = Math.max(el.y1, el.y2);
-  if (el.type === 'rect') return [[x1, y1], [x2, y1], [x2, y2], [x1, y2], [x1, y1]];
-  if (el.type === 'triangle') return [[(x1 + x2) / 2, y1], [x2, y2], [x1, y2], [(x1 + x2) / 2, y1]];
-  if (el.type === 'ellipse') {
-    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2, rx = (x2 - x1) / 2, ry = (y2 - y1) / 2, out = [];
-    for (let i = 0; i <= 48; i++) { const a = (i / 48) * Math.PI * 2; out.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]); }
-    return out;
-  }
-  return [[el.x1, el.y1], [el.x2, el.y2]];
-}
-
-function hit(el, x, y, r) {
-  const b = bbox(el);
-  if (x < b.x1 - r || x > b.x2 + r || y < b.y1 - r || y > b.y2 + r) return false;
-  if (el.type === 'text' || el.type === 'image') return true;
-  if (el.type === 'stroke') {
-    const rr = r + el.size / 2;
-    const p = el.pts;
-    if (p.length === 1) return Math.hypot(x - p[0][0], y - p[0][1]) <= rr;
-    for (let i = 1; i < p.length; i++) if (segDist(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]) <= rr) return true;
-    return false;
-  }
-  if (el.fill && el.type !== 'line' && el.type !== 'arrow') {
-    const xa = Math.min(el.x1, el.x2), xb = Math.max(el.x1, el.x2), ya = Math.min(el.y1, el.y2), yb = Math.max(el.y1, el.y2);
-    if (x >= xa && x <= xb && y >= ya && y <= yb) return true;
-  }
-  const o = shapeOutline(el), rr = r + el.size / 2 + 2;
-  for (let i = 1; i < o.length; i++) if (segDist(x, y, o[i - 1][0], o[i - 1][1], o[i][0], o[i][1]) <= rr) return true;
-  return false;
-}
-
-function translate(el, dx, dy) {
-  if (el.type === 'stroke') return { ...el, pts: el.pts.map((p) => [p[0] + dx, p[1] + dy, p[2]]) };
-  if (el.type === 'text' || el.type === 'image') return { ...el, x: el.x + dx, y: el.y + dy };
-  return { ...el, x1: el.x1 + dx, y1: el.y1 + dy, x2: el.x2 + dx, y2: el.y2 + dy };
-}
-
-function contentBounds(els) {
-  if (!els.length) return null;
-  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  for (const e of els) { const b = bbox(e); x1 = Math.min(x1, b.x1); y1 = Math.min(y1, b.y1); x2 = Math.max(x2, b.x2); y2 = Math.max(y2, b.y2); }
-  return { x1, y1, x2, y2 };
-}
-
-// ───────────────────────── আঁকা ─────────────────────────
-function getImage(src) {
-  let im = imgCache.get(src);
-  if (!im) { im = new Image(); im.onload = invalidate; im.src = src; imgCache.set(src, im); }
-  return im;
-}
-
-function drawEl(c, el, alpha = 1) {
-  c.save();
-  c.globalAlpha = alpha;
-  if (el.type === 'stroke') {
-    if (el.tool === 'marker') c.globalAlpha = alpha * 0.38;
-    c.fillStyle = el.color;
-    c.fill(strokePath(el));
-  } else if (el.type === 'text') {
-    c.fillStyle = el.color;
-    c.font = `${el.size}px ${FONT}`;
-    c.textBaseline = 'top';
-    textLines(el).forEach((l, i) => c.fillText(l, el.x, el.y + i * el.size * 1.25 + el.size * 0.08));
-  } else if (el.type === 'image') {
-    const im = getImage(el.src);
-    if (im.complete && im.naturalWidth) c.drawImage(im, el.x, el.y, el.w, el.h);
-    else { c.strokeStyle = '#bbb'; c.setLineDash([6, 6]); c.strokeRect(el.x, el.y, el.w, el.h); }
-  } else {
-    c.strokeStyle = el.color;
-    c.lineWidth = el.size;
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    if (el.dash) c.setLineDash([el.size * 3, el.size * 2.4]);
-    c.beginPath();
-    const x1 = Math.min(el.x1, el.x2), x2 = Math.max(el.x1, el.x2), y1 = Math.min(el.y1, el.y2), y2 = Math.max(el.y1, el.y2);
-    if (el.type === 'line' || el.type === 'arrow') {
-      c.moveTo(el.x1, el.y1); c.lineTo(el.x2, el.y2);
-    } else if (el.type === 'rect') {
-      const rr = Math.min(6, (x2 - x1) / 4, (y2 - y1) / 4);
-      c.roundRect ? c.roundRect(x1, y1, x2 - x1, y2 - y1, Math.max(0, rr)) : c.rect(x1, y1, x2 - x1, y2 - y1);
-    } else if (el.type === 'ellipse') {
-      c.ellipse((x1 + x2) / 2, (y1 + y2) / 2, Math.max(0.1, (x2 - x1) / 2), Math.max(0.1, (y2 - y1) / 2), 0, 0, Math.PI * 2);
-    } else if (el.type === 'triangle') {
-      c.moveTo((x1 + x2) / 2, y1); c.lineTo(x2, y2); c.lineTo(x1, y2); c.closePath();
-    }
-    if (el.fill && el.type !== 'line' && el.type !== 'arrow') {
-      c.save(); c.globalAlpha = alpha * 0.22; c.fillStyle = el.color; c.fill(); c.restore();
-    }
-    c.stroke();
-    if (el.type === 'arrow') {
-      c.setLineDash([]);
-      const a = Math.atan2(el.y2 - el.y1, el.x2 - el.x1);
-      const L = Math.max(14, el.size * 4.2);
-      c.beginPath();
-      c.moveTo(el.x2 - L * Math.cos(a - 0.45), el.y2 - L * Math.sin(a - 0.45));
-      c.lineTo(el.x2, el.y2);
-      c.lineTo(el.x2 - L * Math.cos(a + 0.45), el.y2 - L * Math.sin(a + 0.45));
-      c.stroke();
-    }
-  }
-  c.restore();
-}
-
-function drawPattern(c, bg, cm, w, h) {
-  if (bg.pattern === 'none') return;
-  const dark = isDark(bg.color);
-  const col = dark ? 'rgba(255,255,255,0.09)' : 'rgba(40,52,90,0.09)';
-  const strong = dark ? 'rgba(255,255,255,0.16)' : 'rgba(40,52,90,0.15)';
-  let step = 32;
-  if (bg.pattern === 'lines') step = 48;
-  while (step * cm.z < 14) step *= 2;
-  const s = step * cm.z;
-  const ox = -((cm.x * cm.z) % s);
-  const oy = -((cm.y * cm.z) % s);
-  c.save();
-  if (bg.pattern === 'dots') {
-    c.fillStyle = strong;
-    const r = Math.max(1, Math.min(2, cm.z * 1.4));
-    for (let x = ox; x < w + s; x += s) for (let y = oy; y < h + s; y += s) { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
-  } else {
-    c.strokeStyle = col;
-    c.lineWidth = 1;
-    c.beginPath();
-    if (bg.pattern === 'grid') for (let x = ox; x < w + s; x += s) { c.moveTo(Math.round(x) + 0.5, 0); c.lineTo(Math.round(x) + 0.5, h); }
-    for (let y = oy; y < h + s; y += s) { c.moveTo(0, Math.round(y) + 0.5); c.lineTo(w, Math.round(y) + 0.5); }
-    c.stroke();
-    if (bg.pattern === 'lines') {
-      c.strokeStyle = dark ? 'rgba(255,120,120,0.25)' : 'rgba(224,57,62,0.25)';
-      const mx = (60 - cm.x) * cm.z;
-      if (mx > 0 && mx < w) { c.beginPath(); c.moveTo(mx, 0); c.lineTo(mx, h); c.stroke(); }
-    }
-  }
-  c.restore();
-}
 
 // স্থির স্তর: পটভূমি + সব সম্পূর্ণ উপাদান
 function drawStatic() {
@@ -368,7 +154,7 @@ function render() {
   if (draft) drawEl(ctx, draft);
 
   // মোবাইল লেখার জায়গা
-  drawPadGuide();
+  drawPadViews();
 
   // নির্বাচন
   if (S.sel.size) {
@@ -434,28 +220,29 @@ function drawLaser(pts, now, z) {
   ctx.restore();
 }
 
-function drawPadGuide() {
-  if (!padCount() && S.tool !== 'cursor') return;
-  const c = page().cursor, cm = cam(), H = S.lineSize;
-  const right = c.right ?? cm.x + VW / cm.z - 40 / cm.z;
-  const dark = isDark(page().bg.color);
-  ctx.save();
-  ctx.fillStyle = dark ? 'rgba(120,150,255,0.07)' : 'rgba(58,86,245,0.045)';
-  ctx.fillRect(c.lx, c.y, Math.max(0, right - c.lx), H);
-  ctx.strokeStyle = dark ? 'rgba(140,165,255,0.45)' : 'rgba(58,86,245,0.35)';
-  ctx.lineWidth = 1 / cm.z;
-  ctx.setLineDash([4 / cm.z, 4 / cm.z]);
-  ctx.beginPath(); ctx.moveTo(c.lx, c.y + H); ctx.lineTo(right, c.y + H); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#3a56f5';
-  ctx.fillRect(c.lx - 3 / cm.z, c.y, 3 / cm.z, H);
-  // লেখা কোথায় পৌঁছেছে
-  if (padHead) {
-    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() / 180);
-    ctx.fillRect(padHead.x + 2 / cm.z, c.y, 2 / cm.z, H);
+// বোর্ডে মোবাইলের দেখা অংশ নীল ফ্রেমে
+function drawPadViews() {
+  if (!S.showPadView) return;
+  const cm = cam();
+  for (const P of pads.values()) {
+    const v = P.view;
+    if (!v || v.page !== page().id) continue;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(58,86,245,0.75)';
+    ctx.lineWidth = 2 / cm.z;
+    ctx.setLineDash([8 / cm.z, 6 / cm.z]);
+    ctx.strokeRect(v.x, v.y, v.w, v.h);
+    ctx.setLineDash([]);
+    const label = '📱 ' + (P.name || 'মোবাইল');
+    ctx.font = `${12 / cm.z}px ${FONT}`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(58,86,245,0.9)';
+    ctx.fillRect(v.x, v.y - 20 / cm.z, tw + 14 / cm.z, 18 / cm.z);
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, v.x + 7 / cm.z, v.y - 11 / cm.z);
+    ctx.restore();
   }
-  ctx.restore();
-  if (padHead) requestRender();
 }
 
 // ───────────────────────── ইতিহাস (Undo/Redo) ─────────────────────────
@@ -473,6 +260,7 @@ function changed(silent) {
   invalidate();
   updateUndoButtons();
   scheduleAutosave();
+  scheduleDoc();
   if (!silent) schedulePadState();
 }
 function undo() {
@@ -574,10 +362,6 @@ canvas.addEventListener('pointerdown', (e) => {
     requestRender();
     return;
   }
-  if (tool === 'cursor') {
-    setPadCursor(wx, wy);
-    return;
-  }
   if (tool === 'select') {
     const r = 6 / cam().z;
     const target = [...page().els].reverse().find((el) => hit(el, wx, wy, r));
@@ -657,7 +441,7 @@ function endPointer(e) {
     touches.delete(e.pointerId);
     if (pinch) { if (touches.size < 2) pinch = null; return; }
   }
-  if (pan) { pan = null; updateCursor(); scheduleAutosave(); return; }
+  if (pan) { pan = null; updateCursor(); scheduleAutosave(); schedulePadState(); return; }
   if (live && live.pid === e.pointerId) {
     if (live.type === 'stroke') {
       const { pid, ...el } = live;
@@ -743,6 +527,7 @@ canvas.addEventListener('wheel', (e) => {
     c.y += (e.shiftKey ? 0 : e.deltaY) / c.z;
     invalidate();
     scheduleAutosave();
+    schedulePadState();
   }
 }, { passive: false });
 
@@ -813,7 +598,7 @@ function finishText() {
 // ───────────────────────── টুল ও প্রপার্টি UI ─────────────────────────
 function setTool(t) {
   if (textEdit) finishText();
-  if (t !== 'cursor') S.prevTool = t;
+  S.prevTool = t;
   S.tool = t;
   if (t !== 'select') { S.sel.clear(); }
   $$('.tool[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
@@ -822,7 +607,7 @@ function setTool(t) {
   requestRender();
 }
 function updateCursor() {
-  const m = { hand: 'grab', select: 'default', text: 'text', laser: 'none', cursor: 'copy', eraser: 'none' };
+  const m = { hand: 'grab', select: 'default', text: 'text', laser: 'none', eraser: 'none' };
   canvas.style.cursor = m[S.tool] || 'crosshair';
 }
 $$('.tool[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
@@ -854,7 +639,7 @@ function buildSwatches() {
 }
 function setColor(c) {
   S.color = c;
-  if (['eraser', 'hand', 'laser', 'cursor'].includes(S.tool)) setTool('pen');
+  if (['eraser', 'hand', 'laser'].includes(S.tool)) setTool('pen');
   if (S.sel.size) commit(page().els.map((el) => (S.sel.has(el.id) && el.type !== 'image' ? { ...el, color: c } : el)));
   if (textEdit) { textEdit.color = c; placeTextEditor(); }
   updateProps();
@@ -867,7 +652,7 @@ function updateProps() {
   const k = sizeKey();
   const sizes = $('#sizes');
   sizes.innerHTML = '';
-  const showColor = !['eraser', 'hand', 'laser', 'cursor'].includes(S.tool) || S.sel.size;
+  const showColor = !['eraser', 'hand', 'laser'].includes(S.tool) || S.sel.size;
   $('#swatches').style.display = showColor ? '' : 'none';
   $('.custom-color').style.display = showColor ? '' : 'none';
   if (k) {
@@ -890,7 +675,7 @@ function updateProps() {
   $$('.shape-only').forEach((x) => (x.style.display = shapeish ? '' : 'none'));
   $('#fillBtn').classList.toggle('on', S.fill);
   $('#dashBtn').classList.toggle('on', S.dash);
-  $('#props').style.display = S.tool === 'hand' || S.tool === 'cursor' || (S.tool === 'select' && !S.sel.size) ? 'none' : '';
+  $('#props').style.display = S.tool === 'hand' || (S.tool === 'select' && !S.sel.size) ? 'none' : '';
 }
 function setSize(k, v) {
   S.size[k] = v;
@@ -959,6 +744,7 @@ function goPage(i) {
   afterZoom();
   updateBgUI();
   schedulePadState();
+  scheduleDoc();
 }
 function addPage(afterCurrent = true) {
   const p = newPage(page().bg);
@@ -1073,8 +859,7 @@ function serialize() {
   return JSON.stringify({
     app: 'likhon', v: 1,
     pi: S.pi,
-    lineSize: S.lineSize, lineGap: S.lineGap,
-    pages: S.pages.map((p) => ({ id: p.id, bg: p.bg, els: p.els, cam: p.cam, cursor: p.cursor })),
+    pages: S.pages.map((p) => ({ id: p.id, bg: p.bg, els: p.els, cam: p.cam })),
   });
 }
 function load(json) {
@@ -1082,11 +867,8 @@ function load(json) {
   if (d.app !== 'likhon' || !Array.isArray(d.pages)) throw new Error('bad file');
   S.pages = d.pages.map((p) => ({ ...newPage(), ...p, undo: [], redo: [] }));
   if (!S.pages.length) S.pages = [newPage()];
-  S.lineSize = d.lineSize || 40;
-  S.lineGap = d.lineGap || 1.6;
   S.sel.clear();
   goPage(d.pi || 0);
-  syncSegs();
 }
 let autosaveT = 0;
 function scheduleAutosave() {
@@ -1154,7 +936,7 @@ $('#zoomOut').onclick = () => setZoom(cam().z / 1.25);
 $('#zoomLabel').onclick = () => setZoom(1);
 $('#zoomFit').onclick = zoomToFit;
 
-const KEYS = { v: 'select', h: 'hand', p: 'pen', m: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', g: 'triangle', t: 'text', k: 'laser', c: 'cursor' };
+const KEYS = { v: 'select', h: 'hand', p: 'pen', m: 'marker', e: 'eraser', l: 'line', a: 'arrow', r: 'rect', o: 'ellipse', g: 'triangle', t: 'text', k: 'laser' };
 let clip = null;
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target === ta) return;
@@ -1238,9 +1020,9 @@ function toast(msg) {
 }
 
 // ───────────────────────── মোবাইল প্যাড সংযোগ ─────────────────────────
-const pads = new Map(); // padId -> {name, strokes: Map}
+// মোবাইল বোর্ডের একটা অংশ বড় করে দেখায়; সেখানে যা লেখা হয় তা বোর্ডের আসল জায়গায় (world স্থানাঙ্কে) আসে।
+const pads = new Map(); // padId -> {name, strokes: Map, view}
 let padList = [];
-let padHead = null; // বর্তমান লাইনে লেখা কোথায় পৌঁছেছে
 let ws = null;
 let net = null;
 const padCount = () => padList.length;
@@ -1248,84 +1030,110 @@ const padCount = () => padList.length;
 function connectBoard() {
   const port = net.port;
   ws = new WebSocket(`ws://127.0.0.1:${port}/ws?role=board&k=${encodeURIComponent(net.pin)}`);
-  ws.onopen = () => sendPadState();
+  ws.onopen = () => { sendPadState(); resendDoc(); };
   ws.onmessage = (ev) => { try { onPadMsg(JSON.parse(ev.data)); } catch (err) { console.error(err); } };
   ws.onclose = () => { ws = null; setTimeout(connectBoard, 1500); };
 }
 function sendPads(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+function getPad(id) { let P = pads.get(id); if (!P) { P = { name: '', strokes: new Map(), view: null }; pads.set(id, P); } return P; }
+
+// বোর্ডের লেখা মোবাইলে পাঠানো: নতুন কিছু যোগ হলে শুধু সেটুকু, অন্য বদলে পুরোটা
+let docV = 0, sentEls = null, sentPage = null, docT = 0;
+const sentImgs = new Set();
+const r1 = (v) => Math.round(v * 10) / 10;
+function slimEl(el) {
+  if (el.type === 'stroke') return { ...el, pts: el.pts.map((p) => [r1(p[0]), r1(p[1]), Math.round((p[2] ?? 0.5) * 100) / 100]) };
+  if (el.type === 'image') {
+    if (sentImgs.has(el.id)) { const { src, ...rest } = el; return rest; }
+    sentImgs.add(el.id);
+  }
+  return el;
+}
+function scheduleDoc() { if (!docT) docT = setTimeout(syncDoc, 16); }
+function syncDoc() {
+  docT = 0;
+  if (!padCount()) { sentEls = null; return; }
+  const pg = page(), els = pg.els;
+  if (sentEls && sentPage === pg.id && els.length >= sentEls.length && sentEls.every((e, i) => els[i] === e)) {
+    if (els.length === sentEls.length) return;
+    sendPads({ t: 'add', v: ++docV, page: pg.id, els: els.slice(sentEls.length).map(slimEl) });
+  } else {
+    sendPads({ t: 'doc', v: ++docV, page: pg.id, els: els.map(slimEl) });
+  }
+  sentEls = els;
+  sentPage = pg.id;
+}
+function resendDoc() { sentEls = null; sentImgs.clear(); scheduleDoc(); }
 
 let padStateT = 0;
 function schedulePadState() { clearTimeout(padStateT); padStateT = setTimeout(sendPadState, 60); }
+function viewRect() { const cm = cam(); return { x: cm.x, y: cm.y, w: VW / cm.z, h: VH / cm.z }; }
 function sendPadState() {
   if (!net) return;
-  const c = page().cursor, cm = cam();
-  const right = c.right ?? cm.x + VW / cm.z - 40 / cm.z;
   sendPads({
     t: 'state',
-    page: S.pi + 1, pages: S.pages.length,
-    dark: isDark(page().bg.color), bg: page().bg.color,
-    max: Math.max(2, (right - c.lx) / S.lineSize),
-    aspect: VW / VH,
+    page: S.pi + 1, pages: S.pages.length, pageId: page().id,
+    bg: page().bg.color, pattern: page().bg.pattern, dark: isDark(page().bg.color),
+    view: viewRect(),
     canUndo: page().undo.length > 0, canRedo: page().redo.length > 0,
   });
 }
 
-function padPoint(m, x, y) {
-  const cm = cam();
-  if (m === 'free') return [cm.x + x * (VW / cm.z), cm.y + y * (VH / cm.z)];
-  const c = page().cursor;
-  return [c.lx + x * S.lineSize, c.y + clamp(y, -0.05, 1.05) * S.lineSize];
-}
-function padScale(m) { return m === 'free' ? VH / cam().z : S.lineSize; }
-
-// লাইনে লেখা দেখার বাইরে চলে গেলে বোর্ড নিজে সরে যায়
-function followInk(x, y) {
-  const cm = cam(), mx = 90 / cm.z;
+// মোবাইলে লেখা বোর্ডের দেখা অংশের বাইরে গেলে বোর্ড সরে গিয়ে লেখাটা দেখায়
+function followPoint(x, y) {
+  // শুধু লেখা সত্যিই পর্দার বাইরে গেলে সরে
+  const cm = cam(), m = 12 / cm.z, w = VW / cm.z, h = VH / cm.z;
   let moved = false;
-  if (x > cm.x + VW / cm.z - mx) { cm.x = x - VW / cm.z + mx * 2.5; moved = true; }
-  if (x < cm.x + mx) { cm.x = x - mx * 2; moved = true; }
-  const H = S.lineSize;
-  const c = page().cursor;
-  if (c.y + H > cm.y + VH / cm.z - mx) { cm.y = c.y + H - VH / cm.z + mx * 2; moved = true; }
-  if (c.y < cm.y + 60 / cm.z) { cm.y = c.y - 100 / cm.z; moved = true; }
-  if (moved) invalidate();
+  if (x > cm.x + w - m) { cm.x = x - w * 0.75; moved = true; }
+  else if (x < cm.x + m) { cm.x = x - w * 0.25; moved = true; }
+  if (y > cm.y + h - m) { cm.y = y - h * 0.75; moved = true; }
+  else if (y < cm.y + m) { cm.y = y - h * 0.25; moved = true; }
+  if (moved) { invalidate(); schedulePadState(); scheduleAutosave(); }
 }
 
 function onPadMsg(m) {
   if (m.t === 'pads') {
+    const before = padList.length;
     padList = m.list;
+    for (const id of [...pads.keys()]) if (!padList.some((p) => p.id === id)) pads.delete(id);
+    for (const p of padList) getPad(p.id).name = p.name;
     updateConnUI();
-    if (padList.length) sendPadState();
+    if (padList.length > before) { sendPadState(); resendDoc(); }
     requestRender();
     return;
   }
-  if (m.t === 'join') { toast(`📱 ${m.name} যুক্ত হয়েছে`); pads.set(m.pad, { name: m.name, strokes: new Map() }); sendPadState(); return; }
-  if (m.t === 'leave') { pads.delete(m.pad); padHead = null; return; }
+  if (m.t === 'join') { toast(`📱 ${m.name} যুক্ত হয়েছে`); getPad(m.pad).name = m.name; sendPadState(); resendDoc(); return; }
+  if (m.t === 'leave') { pads.delete(m.pad); requestRender(); return; }
   if (!m.pad) return;
-  let P = pads.get(m.pad);
-  if (!P) { P = { name: '', strokes: new Map() }; pads.set(m.pad, P); }
+  const P = getPad(m.pad);
 
   switch (m.t) {
+    case 'view':
+      P.view = { x: m.x, y: m.y, w: m.w, h: m.h, page: m.page };
+      requestRender();
+      break;
+    case 'need':
+      resendDoc();
+      sendPadState();
+      break;
     case 'down': {
-      const [x, y] = padPoint(m.m, m.x, m.y);
-      const sc = padScale(m.m);
+      const { x, y } = m;
       if (m.tool === 'laser') {
         const L = { pts: [{ x, y, t: performance.now() }], done: false };
         lasers.push(L);
-        P.strokes.set(m.s, { type: 'laser', L, m: m.m });
+        P.strokes.set(m.s, { type: 'laser', L });
       } else if (m.tool === 'eraser') {
         erasing.clear();
-        const r = Math.max(2, (m.w * sc) / 2);
+        const r = Math.max(2, m.w / 2);
         eraseAt(x, y, x, y, r);
-        P.strokes.set(m.s, { type: 'eraser', last: [x, y], r, m: m.m });
+        P.strokes.set(m.s, { type: 'eraser', last: [x, y], r });
       } else {
-        const tool = m.tool === 'marker' ? 'marker' : 'pen';
         P.strokes.set(m.s, {
-          id: uid(), type: 'stroke', tool, color: m.c || S.color, size: Math.max(1, m.w * sc), pr: !!m.pr, m: m.m,
-          pts: [[x, y, m.p ?? 0.5]],
+          id: uid(), type: 'stroke', tool: m.tool === 'marker' ? 'marker' : 'pen',
+          color: m.c || S.color, size: Math.max(0.5, m.w), pr: !!m.pr, pts: [[x, y, m.p ?? 0.5]],
         });
       }
-      if (m.m !== 'free') { followInk(x, y); padHead = { x }; }
+      followPoint(x, y);
       requestRender();
       break;
     }
@@ -1334,16 +1142,12 @@ function onPadMsg(m) {
       if (!s) break;
       const d = m.d;
       for (let i = 0; i < d.length; i += 3) {
-        const [x, y] = padPoint(s.m, d[i], d[i + 1]);
+        const x = d[i], y = d[i + 1];
         if (s.type === 'stroke') s.pts.push([x, y, d[i + 2]]);
         else if (s.type === 'laser') s.L.pts.push({ x, y, t: performance.now() });
         else if (s.type === 'eraser') { eraseAt(s.last[0], s.last[1], x, y, s.r); s.last = [x, y]; }
-        if (s.m !== 'free' && (!padHead || x > padHead.x)) padHead = { x };
       }
-      if (s.m !== 'free' && d.length >= 3) {
-        const [x, y] = padPoint(s.m, d[d.length - 3], d[d.length - 2]);
-        followInk(x, y);
-      }
+      if (d.length >= 3) followPoint(d[d.length - 3], d[d.length - 2]);
       requestRender();
       break;
     }
@@ -1351,12 +1155,13 @@ function onPadMsg(m) {
       const s = P.strokes.get(m.s);
       P.strokes.delete(m.s);
       if (!s) break;
-      if (s.type === 'stroke') { const { m: _m, ...el } = s; addEl(el); }
+      if (s.type === 'stroke') addEl(s);
       else if (s.type === 'laser') s.L.done = true;
       else if (s.type === 'eraser') {
         if (erasing.size) commit(page().els.filter((x) => !erasing.has(x.id)));
         erasing.clear();
         invalidate();
+        scheduleDoc();
       }
       requestRender();
       break;
@@ -1367,17 +1172,6 @@ function onPadMsg(m) {
       if (s && s.type === 'eraser') erasing.clear();
       if (s && s.type === 'laser') s.L.done = true;
       invalidate();
-      break;
-    }
-    case 'nl': {
-      const c = page().cursor;
-      c.y += S.lineSize * S.lineGap;
-      c.lx = c.x;
-      padHead = null;
-      followInk(c.lx, c.y);
-      invalidate();
-      sendPadState();
-      scheduleAutosave();
       break;
     }
     case 'undo': undo(); break;
@@ -1391,21 +1185,9 @@ function onPadMsg(m) {
     case 'hello':
       P.name = m.name || P.name;
       sendPadState();
+      resendDoc();
       break;
   }
-}
-
-function setPadCursor(wx, wy) {
-  const c = page().cursor, cm = cam();
-  c.x = c.lx = wx;
-  c.y = wy - S.lineSize / 2;
-  c.right = cm.x + VW / cm.z - 40 / cm.z;
-  padHead = null;
-  setTool(S.prevTool || 'pen');
-  sendPadState();
-  scheduleAutosave();
-  toast('এখান থেকে মোবাইলের লেখা শুরু হবে');
-  requestRender();
 }
 
 function updateConnUI() {
@@ -1462,16 +1244,8 @@ $('#pinNew').onclick = async () => {
   if (ws) ws.close();
   toast('নতুন পিন: ' + net.pin + ' — মোবাইলে আবার স্ক্যান করুন');
 };
-function bindSeg(sel, key, cast) {
-  $$(`${sel} button`).forEach((b) => (b.onclick = () => { S[key] = cast(b.dataset.v); syncSegs(); sendPadState(); scheduleAutosave(); requestRender(); }));
-}
-function syncSegs() {
-  $$('#lineSize button').forEach((b) => b.classList.toggle('active', Number(b.dataset.v) === S.lineSize));
-  $$('#lineGap button').forEach((b) => b.classList.toggle('active', Number(b.dataset.v) === S.lineGap));
-}
-bindSeg('#lineSize', 'lineSize', Number);
-bindSeg('#lineGap', 'lineGap', Number);
-$('#cursorHere').onclick = () => { setTool('cursor'); toast('বোর্ডে যেখানে লেখা শুরু হবে সেখানে ক্লিক করুন'); };
+$('#showPadView').onchange = (e) => { S.showPadView = e.target.checked; requestRender(); };
+$('#sendView').onclick = () => { sendPads({ t: 'goto', rect: viewRect(), page: page().id }); toast('মোবাইলে এখন বোর্ডের এই অংশ দেখা যাবে'); };
 
 // ───────────────────────── শুরু ─────────────────────────
 function boot() {
@@ -1487,7 +1261,7 @@ function boot() {
       S.saved = meta.saved !== false;
     }
   } catch { S.pages = [newPage()]; S.pi = 0; }
-  syncSegs();
+  setImageLoadHandler(invalidate);
   resize();
   setTool('pen');
   updatePageLabel();

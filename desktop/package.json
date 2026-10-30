@@ -33,6 +33,7 @@
       "server.js",
       "renderer/**",
       "pad/**",
+      "shared/**",
       "vendor/**",
       "build/icon.png",
       "package.json"
