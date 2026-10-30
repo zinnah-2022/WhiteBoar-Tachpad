@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
             override fun onPageFinished(view: WebView, url: String) {
-                setImmersive(url.startsWith("http"))
+                applyFullscreen(url.startsWith("http"))
             }
         }
         setContentView(web)
@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
         web.loadUrl("file:///android_asset/home.html" + (if (error != null) "?err=$error" else ""))
     }
 
-    private fun setImmersive(on: Boolean) {
+    private fun applyFullscreen(on: Boolean) {
         val c = WindowInsetsControllerCompat(window, web)
         if (on) {
             c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
