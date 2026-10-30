@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- কলম আর তার নিচে লেখার রেখা -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="32" android:translateY="30" android:scaleX="1.85" android:scaleY="1.85">
+        <path android:pathData="M16.5,3.5a2.1,2.1 0,0 1,3 3L7,19l-4,1 1,-4z"
+            android:strokeColor="#FFFFFF" android:strokeWidth="1.9"
+            android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+        <path android:pathData="M12,20h9"
+            android:strokeColor="#FFD25E" android:strokeWidth="2.2"
+            android:strokeLineCap="round" android:fillColor="#00000000" />
+    </group>
+</vector>

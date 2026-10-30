@@ -1,0 +1,63 @@
+{
+  "name": "likhon-board",
+  "productName": "Likhon Board",
+  "version": "1.0.0",
+  "description": "লিখন বোর্ড — মোবাইল দিয়ে লেখার হোয়াইটবোর্ড",
+  "main": "main.js",
+  "author": "Taher",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "serve": "node server.js",
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.likhon.board",
+    "productName": "Likhon Board",
+    "copyright": "Taher",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "renderer/**",
+      "pad/**",
+      "vendor/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "LikhonBoard-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "লিখন বোর্ড",
+      "include": "build/installer.nsh",
+      "runAfterFinish": true
+    }
+  }
+}

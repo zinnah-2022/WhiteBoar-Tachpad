@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- লিখন বোর্ড একই WiFi-র কম্পিউটারে http দিয়ে চলে -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>লিখন প্যাড</title>
+<style>
+  :root { --bg:#121729; --bg2:#1b2238; --bg3:#252e4a; --text:#eef1fb; --muted:#8f99b8; --a:#4c6bff; --a2:#7b4dff; --danger:#ff6b74; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: 'Noto Sans Bengali', 'Hind Siliguri', system-ui, sans-serif; }
+  body { padding: 28px 20px 32px; max-width: 520px; margin: 0 auto; }
+  button, input { font: inherit; color: inherit; }
+  .hero { display: flex; align-items: center; gap: 14px; margin: 6px 0 22px; }
+  .logo { width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; background: linear-gradient(135deg, var(--a), var(--a2)); box-shadow: 0 8px 26px rgba(76,107,255,.4); }
+  .logo svg { width: 30px; height: 30px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  h1 { margin: 0; font-size: 24px; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .err { background: rgba(255,107,116,.12); border: 1px solid rgba(255,107,116,.35); color: #ffc2c6; padding: 12px 14px; border-radius: 14px; font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+  .primary { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; border: 0; height: 62px; border-radius: 18px;
+    background: linear-gradient(135deg, var(--a), var(--a2)); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 10px 28px rgba(76,107,255,.4); }
+  .primary svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .primary:active, .item:active, .ghost:active { transform: scale(.98); }
+  h2 { font-size: 14px; color: var(--muted); margin: 26px 4px 10px; font-weight: 600; }
+  .item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px; border: 0; border-radius: 16px; background: var(--bg2); margin-bottom: 8px; text-align: left; }
+  .item .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--bg3); display: grid; place-items: center; flex: none; }
+  .item .ic svg { width: 20px; height: 20px; fill: none; stroke: #a9b4ff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .item b { display: block; font-size: 15px; }
+  .item small { color: var(--muted); font-size: 12px; }
+  .item .x { margin-left: auto; color: var(--muted); padding: 6px 8px; font-size: 18px; }
+  .card { background: var(--bg2); border-radius: 18px; padding: 16px; }
+  .fields { display: grid; grid-template-columns: 1fr 110px; gap: 10px; }
+  label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  input { background: var(--bg); border: 1px solid var(--bg3); border-radius: 12px; height: 48px; padding: 0 12px; font-size: 17px; outline: none; width: 100%; }
+  input:focus { border-color: var(--a); }
+  .ghost { width: 100%; margin-top: 12px; height: 48px; border-radius: 14px; border: 1px solid var(--a); background: transparent; color: #b9c4ff; font-weight: 600; }
+  ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.85; }
+  ol b { color: var(--text); font-weight: 600; }
+  .ver { text-align: center; color: #5c6685; font-size: 12px; margin-top: 26px; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/><path d="M12 20h9"/></svg></div>
+    <div>
+      <h1>লিখন প্যাড</h1>
+      <div class="sub">মোবাইলে লিখুন, কম্পিউটারের বোর্ডে দেখুন</div>
+    </div>
+  </div>
+
+  <div class="err" id="err" hidden>কম্পিউটারে পৌঁছানো যায়নি। কম্পিউটারে <b>লিখন বোর্ড</b> খোলা আছে আর মোবাইল ও কম্পিউটার একই WiFi-তে আছে কিনা দেখুন।</div>
+
+  <button class="primary" id="scan">
+    <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
+    QR স্ক্যান করে যুক্ত হন
+  </button>
+
+  <div id="recentBox" hidden>
+    <h2>আগের সংযোগ</h2>
+    <div id="recent"></div>
+  </div>
+
+  <h2>হাতে লিখে যুক্ত হন</h2>
+  <div class="card">
+    <div class="fields">
+      <label>কম্পিউটারের ঠিকানা
+        <input id="ip" inputmode="decimal" placeholder="192.168.0.105" autocomplete="off">
+      </label>
+      <label>পিন
+        <input id="pin" inputmode="numeric" maxlength="4" placeholder="1234" autocomplete="off">
+      </label>
+    </div>
+    <button class="ghost" id="manual">যুক্ত হন</button>
+  </div>
+
+  <h2>কীভাবে ব্যবহার করবেন</h2>
+  <ol>
+    <li>কম্পিউটারে <b>লিখন বোর্ড</b> খুলুন</li>
+    <li>উপরে ডানে <b>“মোবাইল সংযোগ”</b> চাপুন — একটা QR কোড আসবে</li>
+    <li>মোবাইল আর কম্পিউটার <b>একই WiFi</b>-তে রাখুন</li>
+    <li>এখানে <b>QR স্ক্যান</b> চাপুন — ব্যাস, লিখতে শুরু করুন</li>
+  </ol>
+
+  <div class="ver" id="ver"></div>
+
+<script>
+  const A = window.LikhonApp;
+  const q = new URLSearchParams(location.search);
+  if (q.get('err')) document.getElementById('err').hidden = false;
+  document.getElementById('scan').onclick = () => A && A.scan();
+
+  function ago(t) {
+    const m = Math.round((Date.now() - t) / 60000);
+    const bn = (n) => String(n).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[d]);
+    if (m < 1) return 'এইমাত্র';
+    if (m < 60) return bn(m) + ' মিনিট আগে';
+    if (m < 1440) return bn(Math.round(m / 60)) + ' ঘণ্টা আগে';
+    return bn(Math.round(m / 1440)) + ' দিন আগে';
+  }
+  function renderRecent() {
+    let list = [];
+    try { list = JSON.parse(A ? A.history() : '[]'); } catch (e) {}
+    const box = document.getElementById('recent');
+    box.innerHTML = '';
+    document.getElementById('recentBox').hidden = !list.length;
+    list.forEach((h) => {
+      const b = document.createElement('button');
+      b.className = 'item';
+      b.innerHTML = '<span class="ic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>' +
+        '<span><b></b><small></small></span><span class="x" aria-label="মুছুন">×</span>';
+      b.querySelector('b').textContent = h.host;
+      b.querySelector('small').textContent = ago(h.t);
+      b.onclick = (e) => {
+        if (e.target.classList.contains('x')) { A.forget(h.host); renderRecent(); return; }
+        A.connect(h.url);
+      };
+      box.appendChild(b);
+    });
+  }
+  renderRecent();
+
+  const ip = document.getElementById('ip'), pin = document.getElementById('pin');
+  try { ip.value = localStorage.getItem('ip') || ''; } catch (e) {}
+  document.getElementById('manual').onclick = () => {
+    const host = ip.value.trim(), k = pin.value.trim();
+    if (!host || !/^\d{4}$/.test(k)) { (host ? pin : ip).focus(); return; }
+    try { localStorage.setItem('ip', host); } catch (e) {}
+    A && A.connect('http://' + host + '/pad/?k=' + k);
+  };
+  if (A) document.getElementById('ver').textContent = 'সংস্করণ ' + A.version();
+</script>
+</body>
+</html>
