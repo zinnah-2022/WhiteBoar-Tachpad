@@ -33,21 +33,32 @@ jobs:
 
   android:
     name: লিখন প্যাড (Android .apk)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
       - name: Build APK
         working-directory: android
+        shell: bash
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --console=plain 2>&1 | tee build.log
+      - name: Show build errors
+        if: failure()
+        working-directory: android
+        shell: bash
+        run: |
+          msg=$(grep -E "^e: |error:|What went wrong|Could not|^> |FAILURE" build.log | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Android build::${msg}"
       - run: cp android/app/build/outputs/apk/release/app-release.apk LikhonPad-1.0.${{ github.run_number }}.apk
       - uses: actions/upload-artifact@v4
         with:
