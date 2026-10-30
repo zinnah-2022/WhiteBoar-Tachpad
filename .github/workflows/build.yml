@@ -1,0 +1,77 @@
+name: Build Likhon
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: লিখন বোর্ড (Windows .exe)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx electron-builder --win nsis --x64 --publish never -c.extraMetadata.version=1.0.${{ github.run_number }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/dist/*.exe
+          if-no-files-found: error
+
+  android:
+    name: লিখন প্যাড (Android .apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        working-directory: android
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+      - run: cp android/app/build/outputs/apk/release/app-release.apk LikhonPad-1.0.${{ github.run_number }}.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: LikhonPad-*.apk
+          if-no-files-found: error
+
+  release:
+    name: ডাউনলোডের জন্য প্রকাশ
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: লিখন v1.0.${{ github.run_number }}
+          make_latest: true
+          body: |
+            **লিখন বোর্ড** (কম্পিউটার): `LikhonBoard-Setup-….exe` ডাউনলোড করে ইনস্টল করুন।
+            **লিখন প্যাড** (মোবাইল): `LikhonPad-….apk` মোবাইলে ডাউনলোড করে ইনস্টল করুন।
+
+            দুটো একই WiFi-তে রাখুন, বোর্ডে “মোবাইল সংযোগ” চাপুন, প্যাডে QR স্ক্যান করুন।
+          files: out/*
