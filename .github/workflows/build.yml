@@ -57,7 +57,7 @@ jobs:
         working-directory: android
         shell: bash
         run: |
-          msg=$( (grep -E "^e: |error:|What went wrong|Could not|^> |FAILURE" build.log || echo "build.log নেই") | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          msg=$( (grep -vE "^> Task|^\s*$" build.log | grep -E -A4 "^e: |error:|What went wrong|Execution failed|FAILED" || tail -30 build.log) | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=Android build::${msg}"
       - run: cp android/app/build/outputs/apk/release/app-release.apk LikhonPad-1.0.${{ github.run_number }}.apk
       - uses: actions/upload-artifact@v4
