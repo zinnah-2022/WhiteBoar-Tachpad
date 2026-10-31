@@ -177,7 +177,7 @@ function connect() {
   ws.onerror = () => {};
 }
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
-function setStatus(kind, text) { $('#dot').className = 'dot ' + kind; $('#statusText').textContent = text; }
+function setStatus(kind, text) { $('#dot').className = 'dot ' + kind; $('#statusText').textContent = text; $('#status').title = text; }
 function showOverlay(title, text, showBtn) {
   $('#ovTitle').textContent = title;
   $('#ovText').textContent = text;

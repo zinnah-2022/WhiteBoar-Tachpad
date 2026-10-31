@@ -122,26 +122,61 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--bg-3); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* আড়াআড়ি (landscape): নিয়ন্ত্রণ ডান পাশে */
+/* আড়াআড়ি (landscape): লেখার জায়গা পুরো উচ্চতা জুড়ে, সব নিয়ন্ত্রণ ডানের প্যানেলে */
 @media (orientation: landscape) and (max-height: 600px) {
   .app {
-    grid-template-rows: 48px minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr) 236px;
-    grid-template-areas: "top top" "stage controls";
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 212px;
+    grid-template-areas: "stage top" "stage controls";
+    padding: 6px;
+    column-gap: 6px;
   }
-  .stage { margin: 0 0 8px 8px; }
-  .controls { padding: 0 8px 8px; align-content: start; overflow-y: auto; }
+  .stage { margin: 0; border-radius: 14px; }
+  .hint { bottom: 10px; }
+
+  /* প্যানেলের মাথা: শুধু সংযোগের চিহ্ন + পেজ + মেনু */
+  .top {
+    background: var(--bg-2); border-radius: 14px 14px 0 0; padding: 4px 4px 0 10px; height: 44px; gap: 2px;
+  }
+  .status { flex: none; }
+  #statusText { display: none; }
+  .dot { width: 10px; height: 10px; }
+  .pager { gap: 0; }
+  .pager .ib { width: 36px; height: 36px; }
+  .pager span { min-width: 30px; font-size: 13px; }
+
+  /* প্যানেলের শরীর */
+  .controls {
+    background: var(--bg-2); border-radius: 0 0 14px 14px; padding: 6px 8px 8px;
+    align-content: start; gap: 8px; overflow-y: auto; scrollbar-width: none;
+  }
+  .controls::-webkit-scrollbar { display: none; }
   .row { flex-wrap: wrap; }
-  .tools-row { overflow: visible; }
-  .tb { min-width: 50px; flex: 1; padding: 5px 4px; }
-  .sizes { margin-left: 0; flex: 1; justify-content: space-between; }
-  .sizes button { flex: 1; height: 40px; }
+
+  /* টুল: শুধু আইকন, এক সারিতে পাঁচটা */
+  .tools-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; overflow: visible; }
+  .tb { min-width: 0; height: 40px; padding: 0; place-items: center; background: var(--bg-3); border-radius: 11px; }
+  .tb span { display: none; }
+  .tb svg { width: 20px; height: 20px; }
+  .sizes { grid-column: 1 / -1; margin: 0; padding: 3px; background: var(--bg); justify-content: space-between; }
+  .sizes button { flex: 1; height: 30px; border-radius: 9px; }
   .vsep { display: none; }
-  .ib.big { flex: 1; height: 40px; }
-  .colors { flex-wrap: wrap; overflow: visible; }
-  .sw { width: 28px; height: 28px; }
-  .more-colors { width: 28px; height: 28px; }
-  .action-row .ib.big { flex: 1; height: 42px; }
-  .zoomg { width: 100%; justify-content: space-between; }
-  .act { justify-content: center; height: 44px; width: 100%; flex: none; }
+
+  /* রং: পাঁচ কলামের গ্রিড */
+  .color-row { display: grid; grid-template-columns: repeat(5, 1fr); justify-items: center; gap: 6px; padding: 2px 0; }
+  .colors { display: contents; }
+  .sw, .more-colors { width: 28px; height: 28px; }
+  .sw.active { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px #fff; }
+  .more-colors { border-color: var(--bg-2); }
+  .more-colors.active { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px #fff; }
+
+  /* আগের/আবার/পুরো পর্দা এক সারিতে, নিচে জুম */
+  .action-row { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-areas: "u r f" "z z z"; gap: 4px; }
+  #undoBtn { grid-area: u; } #redoBtn { grid-area: r; } #fitBtn { grid-area: f; } .zoomg { grid-area: z; }
+  .ib.big, .action-row .ib.big { width: auto; height: 40px; background: var(--bg-3); border-radius: 11px; }
+  .act { width: auto; height: 40px; padding: 0; justify-content: center; background: var(--bg-3); border-radius: 11px; }
+  .act span { display: none; }
+  .act svg { width: 20px; height: 20px; }
+  .zoomg { height: 38px; background: var(--bg); border-radius: 11px; justify-content: space-between; width: 100%; }
+  .zoomg .ib { width: 40px; height: 34px; }
 }

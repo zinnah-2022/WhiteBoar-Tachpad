@@ -1,6 +1,7 @@
 package com.likhon.pad
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -109,13 +110,24 @@ class MainActivity : ComponentActivity() {
 
     private fun applyFullscreen(on: Boolean) {
         val c = WindowInsetsControllerCompat(window, web)
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         if (on) {
             c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            c.hide(WindowInsetsCompat.Type.navigationBars())
+            // আড়াআড়ি অবস্থায় উপরের বারও লুকাই, যাতে লেখার জায়গা পুরো উচ্চতা পায়
+            if (landscape) c.hide(WindowInsetsCompat.Type.systemBars())
+            else {
+                c.hide(WindowInsetsCompat.Type.navigationBars())
+                c.show(WindowInsetsCompat.Type.statusBars())
+            }
         } else {
             c.show(WindowInsetsCompat.Type.systemBars())
         }
         WindowCompat.setDecorFitsSystemWindows(window, true)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyFullscreen(web.url?.startsWith("http") == true)
     }
 
     private fun startScan() {
