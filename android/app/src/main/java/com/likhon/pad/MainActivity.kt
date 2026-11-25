@@ -1,6 +1,20 @@
 package com.likhon.pad
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ContentValues
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
+import android.webkit.WebResourceResponse
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.IOException
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
@@ -34,6 +48,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
     private val prefs by lazy { getSharedPreferences("likhon", MODE_PRIVATE) }
     private val bg = Color.parseColor("#121729")
+    private var pendingSave: Pair<ByteArray, String>? = null
+
+    // Android 9 ও তার আগের ফোনে গ্যালারিতে রাখতে অনুমতি লাগে
+    private val storagePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        val p = pendingSave
+        pendingSave = null
+        if (p != null) toast(if (ok) writeToGallery(p.first, p.second) else "অনুমতি না দেওয়ায় সেভ হয়নি — শেয়ার দিয়ে পাঠাতে পারেন")
+    }
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         val text = result.contents ?: return@registerForActivityResult
@@ -74,6 +96,18 @@ class MainActivity : ComponentActivity() {
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
+            // ফোনের হোয়াইটবোর্ড অ্যাপের ভেতরের ফাইল থেকে চলে (ইন্টারনেট লাগে না)
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val u = request.url
+                if (u.host != ASSET_HOST) return null
+                val path = (u.path ?: "").removePrefix("/assets/")
+                return try {
+                    WebResourceResponse(mimeOf(path), "utf-8", assets.open(path))
+                } catch (_: IOException) {
+                    WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), null)
+                }
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 applyFullscreen(url.startsWith("http"))
             }
@@ -106,6 +140,56 @@ class MainActivity : ComponentActivity() {
 
     private fun showHome(error: String?) {
         web.loadUrl("file:///android_asset/home.html" + (if (error != null) "?err=$error" else ""))
+    }
+
+    private fun openBoard() = web.loadUrl(BOARD_URL)
+
+    private fun mimeOf(path: String) = when (path.substringAfterLast('.', "").lowercase()) {
+        "html" -> "text/html"
+        "js", "mjs" -> "text/javascript"
+        "css" -> "text/css"
+        "png" -> "image/png"
+        "svg" -> "image/svg+xml"
+        "json" -> "application/json"
+        else -> "application/octet-stream"
+    }
+
+    private fun decodeDataUrl(dataUrl: String): ByteArray = Base64.decode(dataUrl.substringAfter(','), Base64.DEFAULT)
+
+    /** ছবি গ্যালারির Pictures/Likhon ফোল্ডারে রাখে; ফলাফলের বার্তা ফেরত দেয় */
+    private fun writeToGallery(bytes: ByteArray, name: String): String = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Likhon")
+            }
+            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw IOException("no uri")
+            contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw IOException("no stream")
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Likhon")
+            dir.mkdirs()
+            val f = File(dir, "$name.png")
+            f.writeBytes(bytes)
+            MediaScannerConnection.scanFile(this, arrayOf(f.absolutePath), arrayOf("image/png"), null)
+        }
+        "গ্যালারিতে সেভ হয়েছে (Pictures/Likhon)"
+    } catch (e: Exception) {
+        "সেভ করা যায়নি: ${e.message}"
+    }
+
+    private fun shareImage(bytes: ByteArray, name: String) {
+        val dir = File(cacheDir, "shared").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val f = File(dir, "$name.png").apply { writeBytes(bytes) }
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", f)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, "বোর্ডের ছবি পাঠান"))
     }
 
     private fun applyFullscreen(on: Boolean) {
@@ -186,6 +270,32 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface fun scan() = runOnUiThread { startScan() }
         @JavascriptInterface fun rescan() = runOnUiThread { startScan() }
         @JavascriptInterface fun home() = runOnUiThread { showHome(null) }
+        @JavascriptInterface fun openBoard() = runOnUiThread { this@MainActivity.openBoard() }
+
+        @JavascriptInterface
+        fun saveImage(dataUrl: String, name: String): String {
+            val bytes = decodeDataUrl(dataUrl)
+            val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+            if (needsPermission) {
+                pendingSave = bytes to name
+                runOnUiThread { storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                return "গ্যালারিতে রাখার অনুমতি দিন"
+            }
+            return writeToGallery(bytes, name)
+        }
+
+        @JavascriptInterface
+        fun shareImage(dataUrl: String, name: String) {
+            val bytes = decodeDataUrl(dataUrl)
+            runOnUiThread {
+                try {
+                    this@MainActivity.shareImage(bytes, name)
+                } catch (e: Exception) {
+                    toast("শেয়ার করা যায়নি")
+                }
+            }
+        }
 
         @JavascriptInterface
         fun connect(address: String) = runOnUiThread {
@@ -214,3 +324,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private const val ASSET_HOST = "appassets.androidplatform.net"
+private const val BOARD_URL = "https://$ASSET_HOST/assets/board/index.html"

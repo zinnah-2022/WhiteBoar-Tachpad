@@ -1,0 +1,163 @@
+:root {
+  --bg: #121729;
+  --bg-2: #1b2238;
+  --bg-3: #252e4a;
+  --text: #eef1fb;
+  --muted: #8f99b8;
+  --accent: #4c6bff;
+  --accent-2: #7b4dff;
+  --danger: #ff5a64;
+  --font: 'Noto Sans Bengali', 'Hind Siliguri', 'Nirmala UI', system-ui, sans-serif;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); user-select: none; -webkit-user-select: none; overscroll-behavior: none; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
+svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+[hidden] { display: none !important; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "top" "stage" "controls";
+}
+
+/* উপরের বার */
+.top { grid-area: top; display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
+.pager { display: flex; align-items: center; font-size: 14px; font-weight: 600; }
+.pager span { min-width: 38px; text-align: center; }
+.top-end { display: flex; }
+.ib { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; color: var(--text); }
+.ib:active { background: var(--bg-3); }
+.ib:disabled { opacity: .3; }
+
+/* লেখার জায়গা */
+.stage { grid-area: stage; position: relative; overflow: hidden; margin: 0 6px; border-radius: 16px; background: #fff; }
+#board { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#textEditor {
+  position: absolute; z-index: 5; border: 1.5px dashed var(--accent); background: rgba(255,255,255,0.02); outline: none;
+  resize: none; overflow: hidden; padding: 0 2px; margin: 0; line-height: 1.25; white-space: pre; min-width: 60px;
+  font-family: 'Nirmala UI','Hind Siliguri','Noto Sans Bengali','Segoe UI',sans-serif; border-radius: 4px;
+}
+.hint {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); pointer-events: none;
+  background: rgba(18, 23, 41, .78); color: #fff; font-size: 13px; padding: 7px 14px; border-radius: 999px; white-space: nowrap;
+  transition: opacity .5s;
+}
+.hint.gone { opacity: 0; }
+
+/* নিচের নিয়ন্ত্রণ */
+.controls { grid-area: controls; padding: 8px 6px calc(8px + var(--safe-b)); display: grid; gap: 8px; min-width: 0; }
+.row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tools { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; }
+.tools::-webkit-scrollbar { display: none; }
+.tb { min-width: 0; height: 42px; border-radius: 12px; display: grid; place-items: center; color: var(--muted); background: var(--bg-2); }
+.tb svg { width: 21px; height: 21px; }
+.tb.active { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 4px 14px rgba(76, 107, 255, .35); }
+
+.colors { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; flex: 1; min-width: 0; }
+.colors::-webkit-scrollbar { display: none; }
+.sw { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,.14); transition: transform .12s; }
+.sw.active { transform: scale(1.1); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #fff; }
+.more-colors {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  background: conic-gradient(#ff4d4d, #ffd84d, #4dd96b, #4dc3ff, #5b5bff, #e54dff, #ff4d4d); border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.2);
+}
+.more-colors.active { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #fff; }
+
+.action-row { gap: 6px; }
+.sizes { display: flex; gap: 2px; background: var(--bg-2); border-radius: 12px; padding: 3px; flex: 1; }
+.sizes button { flex: 1; height: 38px; border-radius: 9px; display: grid; place-items: center; }
+.sizes button.active { background: var(--bg-3); }
+.sizes i { display: block; border-radius: 50%; background: currentColor; }
+.sizes button:nth-child(1) i { width: 5px; height: 5px; }
+.sizes button:nth-child(2) i { width: 9px; height: 9px; }
+.sizes button:nth-child(3) i { width: 14px; height: 14px; }
+.sizes.off { opacity: .3; pointer-events: none; }
+.ib.big { width: 48px; height: 44px; background: var(--bg-2); flex: none; }
+.zl { min-width: 58px; height: 44px; border-radius: 12px; background: var(--bg-2); font-size: 13px; font-weight: 600; flex: none; }
+.zl:active, .tb:active, .sw:active { transform: scale(.95); }
+
+/* রেকর্ডিং মোড: শুধু বোর্ড */
+body.rec .app { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage"; padding: 0; }
+body.rec .top, body.rec .controls { display: none; }
+body.rec .stage { margin: 0; border-radius: 0; }
+.mini {
+  position: fixed; z-index: 15; right: 10px; bottom: calc(10px + var(--safe-b));
+  display: flex; gap: 4px; padding: 5px; border-radius: 16px;
+  background: rgba(18, 23, 41, .72); backdrop-filter: blur(6px); box-shadow: 0 4px 18px rgba(0,0,0,.25);
+}
+.mb { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; color: #dfe4f5; }
+.mb svg { width: 20px; height: 20px; }
+.mb.active { background: rgba(76, 107, 255, .9); color: #fff; }
+.mb i { display: block; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); }
+
+/* শিট */
+.sheet { position: fixed; inset: 0; z-index: 20; background: rgba(5, 8, 18, .55); display: flex; align-items: flex-end; justify-content: center; }
+.sheet-body {
+  width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; background: var(--bg-2); border-radius: 22px 22px 0 0;
+  padding: 14px 16px calc(18px + var(--safe-b)); animation: slide .2s ease;
+}
+@keyframes slide { from { transform: translateY(40px); opacity: 0; } }
+.sheet-title { font-weight: 700; font-size: 15px; margin: 4px 4px 12px; }
+.palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; justify-items: center; }
+.palette .sw { width: 42px; height: 42px; }
+.bg-colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 10px; }
+.bg-colors button { height: 44px; border-radius: 12px; border: 2px solid rgba(255,255,255,.12); }
+.bg-colors button.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.seg { display: flex; background: var(--bg); border-radius: 12px; padding: 3px; gap: 2px; margin-bottom: 12px; }
+.seg button { flex: 1; padding: 9px 4px; border-radius: 9px; font-size: 14px; color: var(--muted); }
+.seg button.active { background: var(--bg-3); color: #fff; font-weight: 600; }
+.menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.menu-item { display: flex; align-items: center; gap: 10px; padding: 13px 12px; border-radius: 12px; font-size: 14px; background: var(--bg-3); text-align: left; }
+.menu-item svg { width: 19px; height: 19px; flex: none; }
+.menu-item:active { filter: brightness(1.2); }
+.menu-item.danger { color: var(--danger); }
+.about { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 14px 2px 0; }
+
+.toast {
+  position: fixed; z-index: 30; left: 50%; bottom: 90px; transform: translateX(-50%);
+  background: #0b0e1a; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  max-width: 90vw; text-align: center;
+}
+
+/* আড়াআড়ি (landscape): পুরো উচ্চতায় বোর্ড, সব নিয়ন্ত্রণ ডানে */
+@media (orientation: landscape) and (max-height: 600px) {
+  .app {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 212px;
+    grid-template-areas: "stage top" "stage controls";
+    padding: 6px; column-gap: 6px;
+  }
+  .stage { margin: 0; border-radius: 14px; }
+  .top { background: var(--bg-2); border-radius: 14px 14px 0 0; height: 44px; padding: 3px 2px 0; }
+  .top .ib { width: 34px; height: 36px; }
+  .pager span { min-width: 30px; font-size: 13px; }
+  #pgAdd, #homeBtn { display: none; }
+  .controls {
+    background: var(--bg-2); border-radius: 0 0 14px 14px; padding: 6px 8px 8px;
+    align-content: start; gap: 8px; overflow-y: auto; scrollbar-width: none;
+  }
+  .controls::-webkit-scrollbar { display: none; }
+  .tools { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; overflow: visible; }
+  .tb { height: 36px; background: var(--bg-3); border-radius: 10px; }
+  .tb svg { width: 19px; height: 19px; }
+  .color-row { display: grid; grid-template-columns: repeat(5, 1fr); justify-items: center; gap: 6px; }
+  .colors { display: contents; }
+  .sw, .more-colors { width: 27px; height: 27px; }
+  .sw.active, .more-colors.active { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px #fff; }
+  .more-colors { border-color: var(--bg-2); }
+  .action-row { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-areas: "s s s" "u r z"; gap: 4px; }
+  .sizes { grid-area: s; background: var(--bg); }
+  .sizes button { height: 30px; }
+  #undoBtn { grid-area: u; } #redoBtn { grid-area: r; } .zl { grid-area: z; }
+  .ib.big, .zl { width: auto; min-width: 0; height: 38px; background: var(--bg-3); border-radius: 10px; }
+  .toast { bottom: 24px; }
+  .menu-grid { grid-template-columns: repeat(3, 1fr); }
+  .sheet-body { max-width: 600px; padding-top: 10px; }
+  .about { display: none; }
+  body.rec .app { padding: 0; column-gap: 0; }
+}

@@ -46,6 +46,19 @@ android {
     }
 }
 
+// কম্পিউটারের বোর্ড আর ফোনের হোয়াইটবোর্ড একই আঁকার কোড ব্যবহার করে — বিল্ডের সময় অ্যাপে কপি হয়
+val likhonShared = layout.buildDirectory.dir("generated/likhonAssets")
+val copySharedDrawing by tasks.registering(Copy::class) {
+    from("../../desktop/shared") { into("shared") }
+    from("../../desktop/vendor") {
+        include("perfect-freehand.mjs")
+        into("vendor")
+    }
+    into(likhonShared)
+}
+android.sourceSets.getByName("main").assets.srcDir(likhonShared)
+tasks.named("preBuild") { dependsOn(copySharedDrawing) }
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.2")

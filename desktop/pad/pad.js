@@ -481,6 +481,10 @@ $('#clearBtn').onclick = () => {
   $('#moreSheet').hidden = true;
 };
 $('#reconnectBtn').onclick = () => { fatal = false; $('#moreSheet').hidden = true; if (ws) ws.close(); else connect(); };
+if (app && app.openBoard) {
+  $('#boardBtn').hidden = false;
+  $('#boardBtn').onclick = () => app.openBoard();
+}
 if (app) {
   $('#scanBtn').hidden = false;
   $('#scanBtn').onclick = () => app.rescan();

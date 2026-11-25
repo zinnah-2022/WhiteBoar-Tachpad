@@ -20,6 +20,14 @@
     background: linear-gradient(135deg, var(--a), var(--a2)); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 10px 28px rgba(76,107,255,.4); }
   .primary svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .primary:active, .item:active, .ghost:active { transform: scale(.98); }
+  .board-card { width: 100%; display: flex; align-items: center; gap: 14px; border: 0; padding: 16px; border-radius: 18px; margin-bottom: 12px; text-align: left;
+    background: linear-gradient(135deg, #18a058, #0ca678); color: #fff; box-shadow: 0 10px 28px rgba(24,160,88,.35); }
+  .board-card .bi { width: 46px; height: 46px; border-radius: 14px; background: rgba(255,255,255,.18); display: grid; place-items: center; flex: none; }
+  .board-card svg { width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .board-card b { display: block; font-size: 18px; }
+  .board-card small { font-size: 13px; opacity: .9; }
+  .board-card:active { transform: scale(.98); }
+  .or { text-align: center; color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
   h2 { font-size: 14px; color: var(--muted); margin: 26px 4px 10px; font-weight: 600; }
   .item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px; border: 0; border-radius: 16px; background: var(--bg2); margin-bottom: 8px; text-align: left; }
   .item .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--bg3); display: grid; place-items: center; flex: none; }
@@ -48,6 +56,12 @@
   </div>
 
   <div class="err" id="err" hidden>কম্পিউটারে পৌঁছানো যায়নি। কম্পিউটারে <b>লিখন বোর্ড</b> খোলা আছে আর মোবাইল ও কম্পিউটার একই WiFi-তে আছে কিনা দেখুন।</div>
+
+  <button class="board-card" id="board">
+    <span class="bi"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M7 21l5-4 5 4"/><path d="M6 12l3-3 3 2 5-5"/></svg></span>
+    <span><b>হোয়াইটবোর্ড</b><small>ফোনেই লিখুন — কম্পিউটার লাগবে না</small></span>
+  </button>
+  <div class="or">অথবা কম্পিউটারের বোর্ডে লিখতে</div>
 
   <button class="primary" id="scan">
     <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
@@ -87,6 +101,7 @@
   const q = new URLSearchParams(location.search);
   if (q.get('err')) document.getElementById('err').hidden = false;
   document.getElementById('scan').onclick = () => A && A.scan();
+  document.getElementById('board').onclick = () => { if (A && A.openBoard) A.openBoard(); else location.href = 'board/index.html'; };
 
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
